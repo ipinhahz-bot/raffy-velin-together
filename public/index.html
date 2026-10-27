@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Raffy & Velin 💕 Together</title>
+  <meta name="description" content="Ruang virtual spesial buat Raffy & Velin — nonton bareng, ngobrol, video call walau jauh." />
+  <meta name="theme-color" content="#f8a4c8" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Pacifico&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+  <!-- Floating Hearts Background -->
+  <div class="hearts-bg" id="heartsBg"></div>
+
+  <!-- SCREEN 1: Landing / Join Room -->
+  <div class="screen active" id="screenLanding">
+    <div class="landing-container">
+      <div class="logo-area">
+        <div class="logo-icon">💕</div>
+        <h1 class="logo-title">Together</h1>
+        <p class="logo-sub">Raffy <span class="heart-divider">♥</span> Velin</p>
+        <p class="tagline">Jauh di mata, deket di hati 🌸</p>
+      </div>
+
+      <div class="card join-card">
+        <h2 class="card-title">Masuk ke Ruang Kita</h2>
+
+        <div class="input-group">
+          <label>Nama Kamu</label>
+          <div class="input-wrapper">
+            <span class="input-icon">👤</span>
+            <input type="text" id="inputName" placeholder="Raffy atau Velin..." maxlength="20" />
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>Kode Ruangan</label>
+          <div class="input-wrapper">
+            <span class="input-icon">🔑</span>
+            <input type="text" id="inputRoom" placeholder="Masukkan kode rahasia..." maxlength="20" />
+          </div>
+        </div>
+
+        <button class="btn-primary" id="btnJoin" onclick="joinRoom()">
+          <span>Masuk Bersama</span>
+          <span class="btn-icon">💕</span>
+        </button>
+
+        <div class="divider"><span>atau</span></div>
+
+        <button class="btn-secondary" onclick="createRoom()">
+          <span>Buat Ruangan Baru</span>
+          <span class="btn-icon">✨</span>
+        </button>
+      </div>
+
+      <div class="features-preview">
+        <div class="feature-chip">🎬 Nobar Bareng</div>
+        <div class="feature-chip">📹 Video Call</div>
+        <div class="feature-chip">💬 Chat Live</div>
+        <div class="feature-chip">😊 Reaksi Emoji</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 2: Main App -->
+  <div class="screen" id="screenApp">
+
+    <!-- Top Bar -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <span class="topbar-logo">💕 Together</span>
+        <div class="room-badge">
+          <span id="roomIdDisplay"></span>
+          <button class="copy-btn" onclick="copyRoomId()" title="Salin kode ruangan">📋</button>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="users-online" id="usersOnline">
+          <div class="online-dot"></div>
+          <span id="onlineCount">1</span>
+        </div>
+        <button class="btn-icon-only" onclick="leaveRoom()" title="Keluar">🚪</button>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="main-layout">
+
+      <!-- Left: Video + Controls -->
+      <div class="left-panel">
+
+        <!-- Video Section -->
+        <div class="video-section">
+          <div class="section-header">
+            <h3>🎬 Nobar</h3>
+            <button class="btn-small" onclick="toggleVideoInput()">Ganti Video</button>
+          </div>
+
+          <div class="video-input-area" id="videoInputArea" style="display:none;">
+            <div class="input-wrapper">
+              <span class="input-icon">🔗</span>
+              <input type="text" id="youtubeUrlInput" placeholder="Paste link YouTube di sini..." />
+            </div>
+            <button class="btn-primary btn-sm" onclick="loadVideo()">
+              <span>Muat Video</span> 🎬
+            </button>
+          </div>
+
+          <div class="youtube-container" id="youtubeContainer">
+            <div class="no-video-placeholder" id="noVideoPlaceholder">
+              <div class="placeholder-emoji">🎬</div>
+              <p>Belum ada video</p>
+              <p class="placeholder-sub">Klik "Ganti Video" dan masukkan link YouTube</p>
+            </div>
+            <div id="youtubePlayer"></div>
+          </div>
+
+          <!-- Sync Controls -->
+          <div class="sync-controls" id="syncControls" style="display:none;">
+            <button class="sync-btn" id="playPauseBtn" onclick="togglePlayPause()">
+              <span id="playPauseIcon">▶</span>
+            </button>
+            <div class="progress-bar-container" id="progressContainer">
+              <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+              </div>
+            </div>
+            <span class="time-display" id="timeDisplay">0:00</span>
+            <button class="sync-btn-sm" onclick="syncNow()" title="Sinkronkan ulang">🔄</button>
+          </div>
+
+          <div class="sync-status" id="syncStatus"></div>
+        </div>
+
+        <!-- Emoji Reactions -->
+        <div class="emoji-section">
+          <p class="emoji-label">Reaksi Cepat</p>
+          <div class="emoji-buttons">
+            <button class="emoji-btn" onclick="sendEmoji('😂')">😂</button>
+            <button class="emoji-btn" onclick="sendEmoji('😍')">😍</button>
+            <button class="emoji-btn" onclick="sendEmoji('😱')">😱</button>
+            <button class="emoji-btn" onclick="sendEmoji('❤️')">❤️</button>
+            <button class="emoji-btn" onclick="sendEmoji('🤣')">🤣</button>
+            <button class="emoji-btn" onclick="sendEmoji('😭')">😭</button>
+            <button class="emoji-btn" onclick="sendEmoji('🥰')">🥰</button>
+            <button class="emoji-btn" onclick="sendEmoji('👏')">👏</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right: VC + Chat -->
+      <div class="right-panel">
+
+        <!-- Video Call Section -->
+        <div class="vc-section">
+          <div class="section-header">
+            <h3>📹 Video Call</h3>
+            <div class="vc-buttons">
+              <button class="btn-vc" id="btnMic" onclick="toggleMic()" title="Mic">🎤</button>
+              <button class="btn-vc" id="btnCam" onclick="toggleCam()" title="Kamera">📷</button>
+              <button class="btn-vc-call" id="btnCall" onclick="toggleCall()">
+                <span id="callBtnText">📹 Mulai VC</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="videos-grid" id="videosGrid">
+            <div class="video-wrapper local-video-wrapper">
+              <video id="localVideo" autoplay muted playsinline></video>
+              <div class="video-label" id="localLabel">Kamu</div>
+              <div class="video-overlay" id="localOverlay">📷 Kamera Mati</div>
+            </div>
+            <div class="video-wrapper remote-video-wrapper" id="remoteVideoWrapper" style="display:none;">
+              <video id="remoteVideo" autoplay playsinline></video>
+              <div class="video-label" id="remoteLabel">Menunggu...</div>
+              <div class="video-overlay" id="remoteOverlay" style="display:none;">📷 Kamera Mati</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Section -->
+        <div class="chat-section">
+          <div class="section-header">
+            <h3>💬 Chat</h3>
+            <span class="typing-indicator" id="typingIndicator"></span>
+          </div>
+
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-welcome">
+              <span>💕 Selamat datang di ruangan Raffy & Velin!</span>
+            </div>
+          </div>
+
+          <div class="chat-input-area">
+            <div class="chat-input-wrapper">
+              <input
+                type="text"
+                id="chatInput"
+                placeholder="Ketik pesan..."
+                maxlength="200"
+                onkeydown="handleChatKey(event)"
+                oninput="handleTyping()"
+              />
+              <button class="btn-send" onclick="sendMessage()">
+                <span>➤</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Emoji Float Container -->
+  <div class="emoji-float-container" id="emojiFloatContainer"></div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Copy Room Modal -->
+  <div class="modal-overlay" id="modalOverlay" onclick="closeModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <h3>🔑 Kode Ruangan</h3>
+      <div class="room-code-display" id="modalRoomCode"></div>
+      <p class="modal-hint">Bagikan kode ini ke pasangan kamu agar bisa gabung!</p>
+      <button class="btn-primary" onclick="copyAndClose()">📋 Salin & Tutup</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
