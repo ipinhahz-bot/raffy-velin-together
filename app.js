@@ -503,13 +503,57 @@ function showSyncStatus(text) {
   setTimeout(() => el.classList.remove('active'), 2500);
 }
 
-// ===== WEBRTC VIDEO CALL =====
+// Fullscreen Cinema Landscape Mode
+function toggleFullscreenCinema() {
+  const isCinema = document.body.classList.toggle('cinema-fullscreen');
+  const btn = document.getElementById('btnFullscreen');
+
+  // Sync streams to cinema boxes if active
+  syncCinemaStreams();
+
+  if (isCinema) {
+    if (btn) btn.innerHTML = '✖ Keluar Fullscreen';
+    // Request device fullscreen & landscape lock if supported
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(() => {});
+    }
+    showToast('🎬 Mode Bioskop Landscape Aktif!');
+  } else {
+    if (btn) btn.innerHTML = '⛶ Fullscreen';
+    if (document.exitFullscreen && document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+    if (screen.orientation && screen.orientation.unlock) {
+      screen.orientation.unlock();
+    }
+  }
+}
+
+function syncCinemaStreams() {
+  const cinemaLocal = document.getElementById('cinemaLocalVideo');
+  const cinemaRemote = document.getElementById('cinemaRemoteVideo');
+  const localVid = document.getElementById('localVideo');
+  const remoteVid = document.getElementById('remoteVideo');
+
+  if (cinemaLocal && localVid && localVid.srcObject) {
+    cinemaLocal.srcObject = localVid.srcObject;
+  }
+  if (cinemaRemote && remoteVid && remoteVid.srcObject) {
+    cinemaRemote.srcObject = remoteVid.srcObject;
+  }
+}
 async function startLocalStream() {
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     const localVideo = document.getElementById('localVideo');
-    localVideo.srcObject = localStream;
-    document.getElementById('localOverlay').style.display = 'none';
+    if (localVideo) localVideo.srcObject = localStream;
+    const localOverlay = document.getElementById('localOverlay');
+    if (localOverlay) localOverlay.style.display = 'none';
+
+    syncCinemaStreams();
   } catch (e) {
     console.warn('Camera/Mic permission denied:', e);
     showToast('⚠️ Izin kamera/mic diperlukan untuk video call');
@@ -559,6 +603,8 @@ function handleMediaCallStream(call) {
     if (overlay) overlay.style.display = 'none';
     isCalling = true;
     updateCallBtn();
+
+    syncCinemaStreams();
     addSystemMessage('📹 Pasangan terhubung di video call!');
   });
 
