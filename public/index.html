@@ -105,7 +105,7 @@
           <div class="video-input-area" id="videoInputArea" style="display:none;">
             <div class="input-wrapper">
               <span class="input-icon">🔗</span>
-              <input type="text" id="youtubeUrlInput" placeholder="Paste link YouTube di sini..." />
+              <input type="text" id="inputVideoUrl" placeholder="Paste link YouTube di sini..." />
             </div>
             <button class="btn-primary btn-sm" onclick="loadVideo()">
               <span>Muat Video</span> 🎬
@@ -113,26 +113,25 @@
           </div>
 
           <div class="youtube-container" id="youtubeContainer">
-            <div class="no-video-placeholder" id="noVideoPlaceholder">
+            <div class="no-video-placeholder" id="noVideoPlaceholder" style="display:none;">
               <div class="placeholder-emoji">🎬</div>
               <p>Belum ada video</p>
               <p class="placeholder-sub">Klik "Ganti Video" dan masukkan link YouTube</p>
             </div>
-            <div id="youtubePlayer"></div>
+            <div id="ytPlayer"></div>
           </div>
 
           <!-- Sync Controls -->
-          <div class="sync-controls" id="syncControls" style="display:none;">
-            <button class="sync-btn" id="playPauseBtn" onclick="togglePlayPause()">
-              <span id="playPauseIcon">▶</span>
+          <div class="sync-controls" id="syncControls">
+            <button class="sync-btn" id="btnPlayPause" onclick="togglePlay()">
+              ▶️
             </button>
-            <div class="progress-bar-container" id="progressContainer">
-              <div class="progress-bar">
+            <div class="progress-bar-container" id="progressContainer" onclick="seekTo(event)">
+              <div class="progress-bar" id="progressBar">
                 <div class="progress-fill" id="progressFill"></div>
               </div>
             </div>
-            <span class="time-display" id="timeDisplay">0:00</span>
-            <button class="sync-btn-sm" onclick="syncNow()" title="Sinkronkan ulang">🔄</button>
+            <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
           </div>
 
           <div class="sync-status" id="syncStatus"></div>

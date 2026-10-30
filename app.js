@@ -313,11 +313,25 @@ function handleIncomingData(data, senderConn) {
 }
 
 // ===== UI & NAVIGATION =====
+function toggleVideoInput() {
+  const el = document.getElementById('videoInputArea');
+  if (el) {
+    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'flex' : 'none';
+  }
+}
+
 function enterApp() {
-  document.getElementById('screenLanding').classList.remove('active');
+  const landing = document.getElementById('screenLanding');
+  if (landing) {
+    landing.classList.remove('active');
+    landing.classList.add('hidden');
+    landing.style.display = 'none';
+  }
   const screenApp = document.getElementById('screenApp');
-  screenApp.style.display = 'flex';
-  screenApp.classList.add('active');
+  if (screenApp) {
+    screenApp.style.display = 'flex';
+    screenApp.classList.add('active');
+  }
 
   document.getElementById('roomIdDisplay').textContent = currentRoom;
   document.getElementById('localLabel').textContent = myName;

@@ -59,17 +59,22 @@ html, body {
 .screen {
   position: fixed;
   top: 0; left: 0; width: 100%; height: 100%;
-  display: none;
+  display: none !important;
   z-index: 1;
   overflow-y: auto;
 }
-.screen.active { display: flex; }
+.screen.active {
+  display: flex !important;
+}
 
 /* ===== LANDING SCREEN ===== */
 #screenLanding {
   align-items: center;
   justify-content: center;
   padding: 20px;
+}
+#screenLanding.hidden {
+  display: none !important;
 }
 .landing-container {
   width: 100%;
