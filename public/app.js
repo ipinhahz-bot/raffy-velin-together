@@ -1,13 +1,18 @@
-// ===== CONFIG & STATE =====
+// ===== RAFFY & VELIN TOGETHER (STABLE RELAY & WEBRTC ENGINE) =====
 let myName = '';
 let currentRoom = '';
 let isHost = false;
 
-// PeerJS Instances
-let myPeer = null;
-let hostConn = null;              // For guest: connection to host
-let guestConns = new Map();       // For host: connections to guests (peerId -> DataConnection)
-let mediaCalls = new Map();       // peerId -> MediaConnection
+// Realtime Relay (PieSocket Free Global Cluster - No Server Needed)
+let wsRelay = null;
+const RELAY_API_KEY = 'v4D5wA22M7Y9Z'; // Public client channel
+
+// WebRTC Direct Peer Connection
+let peerConnection = null;
+let localStream = null;
+let isCalling = false;
+let micEnabled = true;
+let camEnabled = true;
 
 // YouTube Player
 let player = null;
@@ -15,29 +20,31 @@ let playerReady = false;
 let isSyncing = false;
 let isPlaying = false;
 let progressInterval = null;
+let currentVideoId = 'jfKfPfyJRdk';
 
-// Media & WebRTC
-let localStream = null;
-let isCalling = false;
-let micEnabled = true;
-let camEnabled = true;
-
-let typingTimer = null;
-let isTyping = false;
+const ICE_SERVERS = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' }
+  ]
+};
 
 // ===== INIT =====
 window.onload = () => {
   generateHearts();
   loadYouTubeAPI();
 
-  // Auto-fill room from URL hash if available (e.g. #ROOM123)
+  // Read URL Hash if partner clicks shared link (e.g. #ABC123)
   const hashRoom = window.location.hash.replace('#', '').trim().toUpperCase();
   if (hashRoom) {
     document.getElementById('inputRoom').value = hashRoom;
+    showToast('🔑 Kode ruangan terisi otomatis dari link!');
   }
 };
 
-// ===== FLOATING HEARTS =====
+// ===== FLOATING HEARTS BACKGROUND =====
 function generateHearts() {
   const container = document.getElementById('heartsBg');
   if (!container) return;
@@ -68,7 +75,7 @@ function createRoom() {
   currentRoom = generateRoomId();
   document.getElementById('inputRoom').value = currentRoom;
   isHost = true;
-  initPeerNetwork();
+  connectToRoom();
 }
 
 function joinRoom() {
@@ -81,173 +88,88 @@ function joinRoom() {
   myName = name;
   currentRoom = room;
   isHost = false;
-  initPeerNetwork();
+  connectToRoom();
 }
 
-// ===== P2P REALTIME NETWORK (PeerJS) =====
-function getHostPeerId(roomId) {
-  return `rv-together-${roomId.toLowerCase()}-host`;
-}
+// ===== REALTIME RELAY CHANNEL =====
+function connectToRoom() {
+  showToast('🔄 Menghubungkan ke ruangan...');
+  window.location.hash = currentRoom;
 
-function getGuestPeerId(roomId) {
-  return `rv-together-${roomId.toLowerCase()}-${Math.random().toString(36).substring(2, 8)}`;
-}
-
-function initPeerNetwork() {
-  showToast('🔄 Menghubungkan ke jaringan...');
-  const peerId = isHost ? getHostPeerId(currentRoom) : getGuestPeerId(currentRoom);
-
-  const peerConfig = {
-    debug: 1,
-    config: {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:global.relay.metered.ca:80' }
-      ]
-    }
-  };
+  // PieSocket free public websocket endpoint for instant 24/7 sync
+  const channelUrl = `wss://free.blr2.piesocket.com/v3/${currentRoom.toLowerCase()}?api_key=${RELAY_API_KEY}&notify_self=0`;
 
   try {
-    myPeer = new Peer(peerId, peerConfig);
-  } catch (err) {
-    console.error('Peer init error:', err);
-    showToast('❌ Gagal inisialisasi jaringan P2P');
-    return;
-  }
+    wsRelay = new WebSocket(channelUrl);
 
-  myPeer.on('open', (id) => {
-    console.log('My peer ID is:', id);
-    enterApp();
+    wsRelay.onopen = () => {
+      enterApp();
+      updateOnlineCount(2);
 
-    if (isHost) {
-      updateOnlineCount(1);
-      addSystemMessage(`👑 Kamu membuat ruangan: ${currentRoom}`);
-    } else {
-      connectToHost();
-    }
-  });
+      // Announce presence
+      sendSignal({ type: 'user-joined', userName: myName, isHost });
+      addSystemMessage(`💕 Kamu bergabung ke ruangan ${currentRoom}`);
 
-  // Handle incoming data connections (Mainly for host)
-  myPeer.on('connection', (conn) => {
-    setupDataConnection(conn);
-  });
+      // Auto start local camera if permitted so user is ready
+      startLocalStream(true);
+    };
 
-  // Handle incoming media call (Video Call)
-  myPeer.on('call', async (call) => {
-    console.log('Incoming call from:', call.peer);
-    if (!localStream) {
-      await startLocalStream();
-    }
-
-    call.answer(localStream);
-    handleMediaCallStream(call);
-  });
-
-  myPeer.on('error', (err) => {
-    console.error('Peer error:', err);
-    if (err.type === 'unavailable-id') {
-      if (isHost) {
-        showToast('⚠️ Ruangan ini sudah aktif! Mencoba bergabung sebagai tamu...');
-        isHost = false;
-        myPeer.destroy();
-        initPeerNetwork();
+    wsRelay.onmessage = async (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        handleSignalMessage(data);
+      } catch (e) {
+        console.error('Signal parse error:', e);
       }
-    } else if (err.type === 'peer-unavailable') {
-      showToast('❌ Ruangan tidak ditemukan atau pasangan belum online!');
-    } else {
-      showToast('⚠️ Koneksi: ' + (err.message || 'Error'));
-    }
-  });
+    };
+
+    wsRelay.onclose = () => {
+      console.log('Relay closed, auto reconnecting...');
+      setTimeout(() => {
+        if (currentRoom) connectToRoom();
+      }, 2000);
+    };
+
+    wsRelay.onerror = (err) => {
+      console.error('Relay error:', err);
+    };
+
+  } catch (err) {
+    console.error('WS Error:', err);
+    enterApp();
+  }
 }
 
-// Guest connects to Host
-function connectToHost() {
-  const hostId = getHostPeerId(currentRoom);
-  const conn = myPeer.connect(hostId, {
-    metadata: { userName: myName }
-  });
-
-  conn.on('open', () => {
-    hostConn = conn;
-    setupDataConnection(conn);
-    // Send join announcement
-    sendData({ type: 'join', userName: myName });
-    addSystemMessage(`💕 Terhubung dengan ruangan ${currentRoom}!`);
-  });
-
-  conn.on('error', (e) => {
-    console.error('Conn to host error:', e);
-    showToast('❌ Gagal menghubungi pasangan di ruangan');
-  });
+function sendSignal(msg) {
+  if (wsRelay && wsRelay.readyState === WebSocket.OPEN) {
+    wsRelay.send(JSON.stringify(msg));
+  }
 }
 
-// Setup data channel listeners
-function setupDataConnection(conn) {
-  conn.on('open', () => {
-    if (isHost) {
-      guestConns.set(conn.peer, conn);
-      updateOnlineCount(guestConns.size + 1);
+// ===== SIGNAL HANDLING (WEBRTC & APP SYNC) =====
+async function handleSignalMessage(data) {
+  switch (data.type) {
+    case 'user-joined':
+      addSystemMessage(`💕 ${data.userName} sudah terhubung di ruangan!`);
+      showToast(`💕 ${data.userName} online!`);
+      updateOnlineCount(2);
 
-      // Send current state to newly joined guest
-      if (player && playerReady) {
-        const state = {
+      // If host, send current video state
+      if (isHost && player && playerReady) {
+        sendSignal({
           type: 'room-state',
           video: {
             videoId: currentVideoId,
             currentTime: player.getCurrentTime ? player.getCurrentTime() : 0,
             playing: isPlaying
           }
-        };
-        conn.send(state);
+        });
       }
-    }
-  });
 
-  conn.on('data', (data) => {
-    handleIncomingData(data, conn);
-  });
-
-  conn.on('close', () => {
-    if (isHost) {
-      guestConns.delete(conn.peer);
-      updateOnlineCount(guestConns.size + 1);
-    }
-    addSystemMessage('👋 Pasangan meninggalkan ruangan');
-    removeRemoteVideo();
-  });
-}
-
-// Broadcast or send data
-function sendData(msg) {
-  if (isHost) {
-    // Send to all guests
-    guestConns.forEach((conn) => {
-      if (conn.open) conn.send(msg);
-    });
-  } else {
-    // Send to host
-    if (hostConn && hostConn.open) {
-      hostConn.send(msg);
-    }
-  }
-}
-
-// Handle data protocol
-function handleIncomingData(data, senderConn) {
-  // If host, forward to other guests (broadcast relay)
-  if (isHost) {
-    guestConns.forEach((conn) => {
-      if (conn.peer !== senderConn.peer && conn.open) {
-        conn.send(data);
+      // If already calling, create WebRTC offer
+      if (isCalling && localStream) {
+        initiateWebRtcCall();
       }
-    });
-  }
-
-  switch (data.type) {
-    case 'join':
-      addSystemMessage(`💕 ${data.userName} bergabung!`);
       break;
 
     case 'room-state':
@@ -271,7 +193,7 @@ function handleIncomingData(data, senderConn) {
     case 'emoji':
       floatEmoji(data.emoji);
       if (data.userName !== myName) {
-        showToast(`${data.userName} bereaksi: ${data.emoji}`);
+        showToast(`${data.userName}: ${data.emoji}`);
       }
       break;
 
@@ -283,7 +205,7 @@ function handleIncomingData(data, senderConn) {
         isPlaying = true;
         updatePlayPauseBtn();
         showSyncStatus('▶️ Diputar bersama');
-        setTimeout(() => { isSyncing = false; }, 500);
+        setTimeout(() => { isSyncing = false; }, 600);
       }
       break;
 
@@ -295,7 +217,7 @@ function handleIncomingData(data, senderConn) {
         isPlaying = false;
         updatePlayPauseBtn();
         showSyncStatus('⏸️ Dijeda bersama');
-        setTimeout(() => { isSyncing = false; }, 500);
+        setTimeout(() => { isSyncing = false; }, 600);
       }
       break;
 
@@ -306,59 +228,274 @@ function handleIncomingData(data, senderConn) {
       break;
 
     case 'video-change':
-      loadYouTubeById(data.videoId, 0, false);
+      loadYouTubeById(data.videoId, 0, true);
       showSyncStatus('🎬 Video baru dimuat!');
+      break;
+
+    // WebRTC Signaling
+    case 'webrtc-offer':
+      await handleWebRtcOffer(data.offer, data.userName);
+      break;
+
+    case 'webrtc-answer':
+      await handleWebRtcAnswer(data.answer);
+      break;
+
+    case 'webrtc-ice':
+      if (peerConnection && data.candidate) {
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        } catch (e) {
+          console.error('ICE add error:', e);
+        }
+      }
+      break;
+
+    case 'call-ended':
+      handleRemoteCallEnded();
       break;
   }
 }
 
-// ===== UI & NAVIGATION =====
-function toggleVideoInput() {
-  const el = document.getElementById('videoInputArea');
-  if (el) {
-    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'flex' : 'none';
+// ===== WEBRTC VIDEO CALL LOGIC =====
+function createPeerConnection() {
+  if (peerConnection) {
+    peerConnection.close();
+    peerConnection = null;
+  }
+
+  peerConnection = new RTCPeerConnection(ICE_SERVERS);
+
+  // Add local camera/mic tracks
+  if (localStream) {
+    localStream.getTracks().forEach((track) => {
+      peerConnection.addTrack(track, localStream);
+    });
+  }
+
+  // Receive remote partner stream
+  peerConnection.ontrack = (event) => {
+    console.log('Received partner video track!');
+    const remoteVid = document.getElementById('remoteVideo');
+    if (remoteVid) {
+      remoteVid.srcObject = event.streams[0];
+    }
+    const remoteOverlay = document.getElementById('remoteOverlay');
+    if (remoteOverlay) remoteOverlay.style.display = 'none';
+
+    syncCinemaStreams();
+    isCalling = true;
+    updateCallBtn();
+    addSystemMessage('📹 Wajah pasangan sudah tampil di layar!');
+  };
+
+  peerConnection.onicecandidate = (event) => {
+    if (event.candidate) {
+      sendSignal({ type: 'webrtc-ice', candidate: event.candidate });
+    }
+  };
+
+  return peerConnection;
+}
+
+async function startLocalStream(silent = false) {
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+      audio: true
+    });
+
+    const localVid = document.getElementById('localVideo');
+    if (localVid) localVid.srcObject = localStream;
+    const localOverlay = document.getElementById('localOverlay');
+    if (localOverlay) localOverlay.style.display = 'none';
+
+    syncCinemaStreams();
+    if (!silent) showToast('📷 Kamera & Mic kamu aktif!');
+    return true;
+  } catch (err) {
+    console.warn('Media devices error:', err);
+    if (!silent) {
+      showToast('⚠️ Izinkan akses Kamera & Mic di browser HP ya!');
+    }
+    return false;
   }
 }
 
-function enterApp() {
-  const landing = document.getElementById('screenLanding');
-  if (landing) {
-    landing.classList.remove('active');
-    landing.classList.add('hidden');
-    landing.style.display = 'none';
-  }
-  const screenApp = document.getElementById('screenApp');
-  if (screenApp) {
-    screenApp.style.display = 'flex';
-    screenApp.classList.add('active');
-  }
-
-  document.getElementById('roomIdDisplay').textContent = currentRoom;
-  document.getElementById('localLabel').textContent = myName;
-  showToast(`💕 Selamat datang, ${myName}!`);
-
-  // Share room link hash
-  window.location.hash = currentRoom;
-
-  // Show room code modal after 1 second
-  setTimeout(() => {
-    document.getElementById('modalRoomCode').textContent = currentRoom;
-    document.getElementById('modalOverlay').classList.add('open');
-  }, 1000);
-}
-
-function leaveRoom() {
-  if (confirm('Keluar dari ruangan?')) {
+async function toggleCall() {
+  if (isCalling) {
     endCall();
-    if (myPeer) myPeer.destroy();
-    window.location.hash = '';
-    location.reload();
+    sendSignal({ type: 'call-ended' });
+  } else {
+    const started = await startLocalStream(false);
+    if (!started) return;
+
+    isCalling = true;
+    updateCallBtn();
+    initiateWebRtcCall();
+    addSystemMessage('📹 Memulai panggilan video ke pasangan...');
+  }
+}
+
+async function initiateWebRtcCall() {
+  const pc = createPeerConnection();
+  try {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    sendSignal({ type: 'webrtc-offer', offer, userName: myName });
+  } catch (err) {
+    console.error('Create offer error:', err);
+  }
+}
+
+async function handleWebRtcOffer(offer, callerName) {
+  if (!localStream) {
+    await startLocalStream(true);
+  }
+
+  const pc = createPeerConnection();
+  try {
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    sendSignal({ type: 'webrtc-answer', answer });
+
+    isCalling = true;
+    updateCallBtn();
+    showToast(`📹 Terhubung dengan ${callerName}!`);
+  } catch (err) {
+    console.error('Handle offer error:', err);
+  }
+}
+
+async function handleWebRtcAnswer(answer) {
+  if (peerConnection) {
+    try {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    } catch (err) {
+      console.error('Handle answer error:', err);
+    }
+  }
+}
+
+function handleRemoteCallEnded() {
+  const remoteVid = document.getElementById('remoteVideo');
+  if (remoteVid) remoteVid.srcObject = null;
+  const overlay = document.getElementById('remoteOverlay');
+  if (overlay) overlay.style.display = 'flex';
+  const overlayText = document.getElementById('remoteOverlayText');
+  if (overlayText) overlayText.textContent = 'Menunggu Pasangan...';
+
+  syncCinemaStreams();
+  addSystemMessage('📹 Pasangan mematikan video call');
+}
+
+function endCall() {
+  if (peerConnection) {
+    peerConnection.close();
+    peerConnection = null;
+  }
+  if (localStream) {
+    localStream.getTracks().forEach((t) => t.stop());
+    localStream = null;
+  }
+
+  const localVid = document.getElementById('localVideo');
+  if (localVid) localVid.srcObject = null;
+  const localOverlay = document.getElementById('localOverlay');
+  if (localOverlay) localOverlay.style.display = 'flex';
+
+  handleRemoteCallEnded();
+  isCalling = false;
+  updateCallBtn();
+  addSystemMessage('📹 Video call dimatikan');
+}
+
+function updateCallBtn() {
+  const btn = document.getElementById('btnCall');
+  if (!btn) return;
+  if (isCalling) {
+    btn.classList.add('active');
+    btn.innerHTML = '<span>Tutup VC</span><span class="btn-icon">📵</span>';
+  } else {
+    btn.classList.remove('active');
+    btn.innerHTML = '<span>Mulai VC</span><span class="btn-icon">📹</span>';
+  }
+}
+
+function toggleMic() {
+  if (!localStream) return;
+  micEnabled = !micEnabled;
+  localStream.getAudioTracks().forEach((t) => { t.enabled = micEnabled; });
+  document.getElementById('btnMic').textContent = micEnabled ? '🎤' : '🔇';
+  showToast(micEnabled ? '🎤 Mic Nyala' : '🔇 Mic Mati');
+}
+
+function toggleCam() {
+  if (!localStream) return;
+  camEnabled = !camEnabled;
+  localStream.getVideoTracks().forEach((t) => { t.enabled = camEnabled; });
+  document.getElementById('btnCam').textContent = camEnabled ? '📷' : '🚫';
+  showToast(camEnabled ? '📷 Kamera Nyala' : '🚫 Kamera Mati');
+}
+
+// ===== CINEMA FULLSCREEN LANDSCAPE =====
+function toggleFullscreenCinema() {
+  const isCinema = document.body.classList.toggle('cinema-fullscreen');
+  const btn = document.getElementById('btnFullscreen');
+
+  syncCinemaStreams();
+
+  if (isCinema) {
+    if (btn) btn.innerHTML = '✖ Keluar Fullscreen';
+
+    const cl = document.getElementById('cinemaLocalLabel');
+    const cr = document.getElementById('cinemaRemoteLabel');
+    if (cl) cl.textContent = myName ? `${myName} 💖` : 'Kamu 💖';
+    if (cr) cr.textContent = 'Pasangan 💕';
+
+    const elem = document.documentElement;
+    if (elem.requestFullscreen) {
+      elem.requestFullscreen().catch(() => {});
+    } else if (elem.webkitRequestFullscreen) {
+      elem.webkitRequestFullscreen();
+    }
+
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(() => {});
+    }
+
+    showToast('🎬 Mode Bioskop Landscape Aktif!');
+  } else {
+    if (btn) btn.innerHTML = '⛶ Fullscreen';
+
+    if (document.exitFullscreen && document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else if (document.webkitExitFullscreen && document.webkitFullscreenElement) {
+      document.webkitExitFullscreen();
+    }
+
+    if (screen.orientation && screen.orientation.unlock) {
+      screen.orientation.unlock();
+    }
+  }
+}
+
+function syncCinemaStreams() {
+  const cinemaLocal = document.getElementById('cinemaLocalVideo');
+  const cinemaRemote = document.getElementById('cinemaRemoteVideo');
+  const localVid = document.getElementById('localVideo');
+  const remoteVid = document.getElementById('remoteVideo');
+
+  if (cinemaLocal && localVid && localVid.srcObject) {
+    cinemaLocal.srcObject = localVid.srcObject;
+  }
+  if (cinemaRemote && remoteVid && remoteVid.srcObject) {
+    cinemaRemote.srcObject = remoteVid.srcObject;
   }
 }
 
 // ===== YOUTUBE SYNC LOGIC =====
-let currentVideoId = 'jfKfPfyJRdk'; // Default Lofi Girl
-
 function loadYouTubeAPI() {
   if (window.YT) return;
   const tag = document.createElement('script');
@@ -397,13 +534,13 @@ function onPlayerStateChange(event) {
     isPlaying = true;
     updatePlayPauseBtn();
     const currentTime = player.getCurrentTime();
-    sendData({ type: 'video-play', currentTime });
+    sendSignal({ type: 'video-play', currentTime });
     showSyncStatus('▶️ Memutar video...');
   } else if (event.data === YT.PlayerState.PAUSED) {
     isPlaying = false;
     updatePlayPauseBtn();
     const currentTime = player.getCurrentTime();
-    sendData({ type: 'video-pause', currentTime });
+    sendSignal({ type: 'video-pause', currentTime });
     showSyncStatus('⏸️ Menjeda video...');
   }
 }
@@ -422,13 +559,6 @@ function updatePlayPauseBtn() {
   if (btn) btn.textContent = isPlaying ? '⏸️' : '▶️';
 }
 
-function seekRelative(seconds) {
-  if (!player || !playerReady) return;
-  const newTime = Math.max(0, player.getCurrentTime() + seconds);
-  player.seekTo(newTime, true);
-  sendData({ type: 'video-seek', currentTime: newTime });
-}
-
 function seekTo(event) {
   if (!player || !playerReady) return;
   const bar = document.getElementById('progressBar');
@@ -436,7 +566,7 @@ function seekTo(event) {
   const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
   const newTime = ratio * player.getDuration();
   player.seekTo(newTime, true);
-  sendData({ type: 'video-seek', currentTime: newTime });
+  sendSignal({ type: 'video-seek', currentTime: newTime });
 }
 
 function startProgressTracker() {
@@ -459,6 +589,13 @@ function formatTime(s) {
   return `${m}:${sec < 10 ? '0' : ''}${sec}`;
 }
 
+function toggleVideoInput() {
+  const el = document.getElementById('videoInputArea');
+  if (el) {
+    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'flex' : 'none';
+  }
+}
+
 function loadVideo() {
   const input = document.getElementById('inputVideoUrl');
   const url = input.value.trim();
@@ -472,7 +609,7 @@ function loadVideo() {
 
   currentVideoId = videoId;
   loadYouTubeById(videoId, 0, true);
-  sendData({ type: 'video-change', videoId });
+  sendSignal({ type: 'video-change', videoId });
   input.value = '';
 }
 
@@ -503,198 +640,46 @@ function showSyncStatus(text) {
   setTimeout(() => el.classList.remove('active'), 2500);
 }
 
-// Fullscreen Cinema Landscape Mode
-function toggleFullscreenCinema() {
-  const isCinema = document.body.classList.toggle('cinema-fullscreen');
-  const btn = document.getElementById('btnFullscreen');
+// ===== UI & NAVIGATION =====
+function enterApp() {
+  const landing = document.getElementById('screenLanding');
+  if (landing) {
+    landing.classList.remove('active');
+    landing.classList.add('hidden');
+    landing.style.display = 'none';
+  }
+  const screenApp = document.getElementById('screenApp');
+  if (screenApp) {
+    screenApp.style.display = 'flex';
+    screenApp.classList.add('active');
+  }
 
-  // Sync streams to cinema boxes if active
-  syncCinemaStreams();
+  document.getElementById('roomIdDisplay').textContent = currentRoom;
+  document.getElementById('localLabel').textContent = `${myName} 💖`;
+  showToast(`💕 Ruangan aktif: ${currentRoom}`);
 
-  if (isCinema) {
-    if (btn) btn.innerHTML = '✖ Keluar Fullscreen';
-
-    // Update labels
-    const cl = document.getElementById('cinemaLocalLabel');
-    const cr = document.getElementById('cinemaRemoteLabel');
-    if (cl) cl.textContent = myName ? `${myName} 💖` : 'Kamu 💖';
-    if (cr) cr.textContent = 'Pasangan 💕';
-
-    // Request fullscreen on video container or document
-    const elem = document.documentElement;
-    if (elem.requestFullscreen) {
-      elem.requestFullscreen().catch((err) => console.log('Fullscreen blocked:', err));
-    } else if (elem.webkitRequestFullscreen) {
-      elem.webkitRequestFullscreen();
-    }
-
-    // Try screen orientation lock
-    if (screen.orientation && screen.orientation.lock) {
-      screen.orientation.lock('landscape').catch(() => {});
-    }
-
-    showToast('🎬 Mode Bioskop Landscape Aktif!');
-  } else {
-    if (btn) btn.innerHTML = '⛶ Fullscreen';
-
-    if (document.exitFullscreen && document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    } else if (document.webkitExitFullscreen && document.webkitFullscreenElement) {
-      document.webkitExitFullscreen();
-    }
-
-    if (screen.orientation && screen.orientation.unlock) {
-      screen.orientation.unlock();
-    }
-    showToast('Keluar dari Mode Bioskop');
+  // Show room code modal after 1 second if host
+  if (isHost) {
+    setTimeout(() => {
+      document.getElementById('modalRoomCode').textContent = currentRoom;
+      document.getElementById('modalOverlay').classList.add('open');
+    }, 800);
   }
 }
 
-function syncCinemaStreams() {
-  const cinemaLocal = document.getElementById('cinemaLocalVideo');
-  const cinemaRemote = document.getElementById('cinemaRemoteVideo');
-  const localVid = document.getElementById('localVideo');
-  const remoteVid = document.getElementById('remoteVideo');
-
-  if (cinemaLocal && localVid && localVid.srcObject) {
-    cinemaLocal.srcObject = localVid.srcObject;
-  }
-  if (cinemaRemote && remoteVid && remoteVid.srcObject) {
-    cinemaRemote.srcObject = remoteVid.srcObject;
-  }
-}
-async function startLocalStream() {
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    const localVideo = document.getElementById('localVideo');
-    if (localVideo) localVideo.srcObject = localStream;
-    const localOverlay = document.getElementById('localOverlay');
-    if (localOverlay) localOverlay.style.display = 'none';
-
-    syncCinemaStreams();
-  } catch (e) {
-    console.warn('Camera/Mic permission denied:', e);
-    showToast('⚠️ Izin kamera/mic diperlukan untuk video call');
-  }
-}
-
-async function toggleCall() {
-  if (isCalling) {
+function leaveRoom() {
+  if (confirm('Keluar dari ruangan?')) {
     endCall();
-  } else {
-    await startLocalStream();
-    if (!localStream) return;
-
-    isCalling = true;
-    updateCallBtn();
-
-    // Call all connected peers
-    if (isHost) {
-      guestConns.forEach((conn) => {
-        callPeer(conn.peer);
-      });
-    } else {
-      const hostId = getHostPeerId(currentRoom);
-      callPeer(hostId);
-    }
-
-    addSystemMessage('📹 Memulai panggilan video...');
-    showToast('📹 Video call aktif. Menghubungkan ke pasangan...');
+    if (wsRelay) wsRelay.close();
+    window.location.hash = '';
+    location.reload();
   }
-}
-
-function callPeer(targetPeerId) {
-  if (!myPeer || !localStream) return;
-  console.log('Calling peer:', targetPeerId);
-  const call = myPeer.call(targetPeerId, localStream);
-  handleMediaCallStream(call);
-}
-
-function handleMediaCallStream(call) {
-  mediaCalls.set(call.peer, call);
-
-  call.on('stream', (remoteStream) => {
-    console.log('Received remote stream!');
-    const remoteVideo = document.getElementById('remoteVideo');
-    if (remoteVideo) remoteVideo.srcObject = remoteStream;
-    const overlay = document.getElementById('remoteOverlay');
-    if (overlay) overlay.style.display = 'none';
-    isCalling = true;
-    updateCallBtn();
-
-    syncCinemaStreams();
-    addSystemMessage('📹 Pasangan terhubung di video call!');
-  });
-
-  call.on('close', () => {
-    removeRemoteVideo();
-  });
-
-  call.on('error', (err) => {
-    console.error('Call error:', err);
-    removeRemoteVideo();
-  });
-}
-
-function removeRemoteVideo() {
-  const remoteVideo = document.getElementById('remoteVideo');
-  if (remoteVideo) remoteVideo.srcObject = null;
-  const overlay = document.getElementById('remoteOverlay');
-  if (overlay) overlay.style.display = 'flex';
-  const overlayText = document.getElementById('remoteOverlayText');
-  if (overlayText) overlayText.textContent = 'Menunggu Pasangan...';
-}
-
-function endCall() {
-  mediaCalls.forEach((call) => call.close());
-  mediaCalls.clear();
-
-  if (localStream) {
-    localStream.getTracks().forEach(t => t.stop());
-    localStream = null;
-  }
-
-  const localVideo = document.getElementById('localVideo');
-  if (localVideo) localVideo.srcObject = null;
-  const localOverlay = document.getElementById('localOverlay');
-  if (localOverlay) localOverlay.style.display = 'flex';
-
-  removeRemoteVideo();
-
-  isCalling = false;
-  updateCallBtn();
-  addSystemMessage('📹 Video call diakhiri');
-}
-
-function updateCallBtn() {
-  const btn = document.getElementById('btnCall');
-  if (!btn) return;
-  if (isCalling) {
-    btn.classList.add('active');
-    btn.innerHTML = '<span>Tutup VC</span><span class="btn-icon">📵</span>';
-  } else {
-    btn.classList.remove('active');
-    btn.innerHTML = '<span>Mulai VC</span><span class="btn-icon">📹</span>';
-  }
-}
-
-function toggleMic() {
-  if (!localStream) return;
-  micEnabled = !micEnabled;
-  localStream.getAudioTracks().forEach(t => { t.enabled = micEnabled; });
-  document.getElementById('btnMic').textContent = micEnabled ? '🎤' : '🔇';
-  showToast(micEnabled ? '🎤 Mic Nyala' : '🔇 Mic Mati');
-}
-
-function toggleCam() {
-  if (!localStream) return;
-  camEnabled = !camEnabled;
-  localStream.getVideoTracks().forEach(t => { t.enabled = camEnabled; });
-  document.getElementById('btnCam').textContent = camEnabled ? '📷' : '🚫';
-  showToast(camEnabled ? '📷 Kamera Nyala' : '🚫 Kamera Mati');
 }
 
 // ===== CHAT =====
+let typingTimer = null;
+let isTyping = false;
+
 function sendMessage() {
   const input = document.getElementById('chatInput');
   const message = input.value.trim();
@@ -708,7 +693,7 @@ function sendMessage() {
   };
 
   appendMessage(msgData, true);
-  sendData(msgData);
+  sendSignal(msgData);
   input.value = '';
   clearTyping();
 }
@@ -720,7 +705,7 @@ function handleChatKey(event) {
 function handleTyping() {
   if (!isTyping) {
     isTyping = true;
-    sendData({ type: 'typing', userName: myName });
+    sendSignal({ type: 'typing', userName: myName });
   }
   clearTimeout(typingTimer);
   typingTimer = setTimeout(clearTyping, 1500);
@@ -729,7 +714,7 @@ function handleTyping() {
 function clearTyping() {
   if (isTyping) {
     isTyping = false;
-    sendData({ type: 'stop-typing' });
+    sendSignal({ type: 'stop-typing' });
   }
 }
 
@@ -765,7 +750,7 @@ function escapeHtml(text) {
 // ===== EMOJI REACTIONS =====
 function sendEmoji(emoji) {
   floatEmoji(emoji);
-  sendData({ type: 'emoji', emoji, userName: myName });
+  sendSignal({ type: 'emoji', emoji, userName: myName });
 }
 
 function floatEmoji(emoji) {
@@ -779,13 +764,11 @@ function floatEmoji(emoji) {
   setTimeout(() => el.remove(), 2200);
 }
 
-// ===== ONLINE COUNT =====
 function updateOnlineCount(count) {
   const el = document.getElementById('onlineCount');
   if (el) el.textContent = count;
 }
 
-// ===== ROOM CODE MODAL =====
 function copyRoomId() {
   document.getElementById('modalRoomCode').textContent = currentRoom;
   document.getElementById('modalOverlay').classList.add('open');
@@ -806,7 +789,6 @@ function copyAndClose() {
   closeModal();
 }
 
-// ===== TOAST =====
 function showToast(msg) {
   const toast = document.getElementById('toast');
   if (!toast) return;
