@@ -523,14 +523,29 @@ html, body {
 .emoji-btn:hover { transform: scale(1.2); background: var(--pink-200); }
 .emoji-btn:active { transform: scale(0.95); }
 
-/* VC Section */
+/* ===== VC Section ===== */
 .vc-section {
-  background: rgba(255,255,255,0.7);
+  background: rgba(255,255,255,0.85);
   border-radius: var(--radius-md);
   padding: 12px;
-  border: 1px solid var(--pink-200);
-  backdrop-filter: blur(10px);
+  border: 1.5px solid var(--pink-200);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-soft);
   flex-shrink: 0;
+}
+.vc-header-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vc-sub-badge {
+  font-size: 0.72rem;
+  background: var(--pink-100);
+  color: var(--rose);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 700;
+  border: 1px solid var(--pink-300);
 }
 .vc-buttons { display: flex; gap: 6px; align-items: center; }
 .btn-vc {
@@ -562,42 +577,61 @@ html, body {
 .btn-vc-call.active {
   background: linear-gradient(135deg, #ff4d4d, #ff9a9a);
 }
+
+/* Dual Video Booth Display */
 .videos-grid {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
 }
 .video-wrapper {
   position: relative;
-  flex: 1;
+  width: 100%;
   aspect-ratio: 4/3;
-  background: #1a0a2e;
+  background: #150921;
   border-radius: var(--radius-sm);
   overflow: hidden;
-  border: 2px solid var(--pink-200);
+  border: 2px solid var(--pink-300);
+  box-shadow: 0 4px 12px rgba(233, 30, 140, 0.12);
 }
 .video-wrapper video {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
 .local-video-wrapper video { transform: scaleX(-1); }
 .video-label {
   position: absolute;
   bottom: 6px; left: 8px;
-  background: rgba(0,0,0,0.5);
-  color: white;
-  font-size: 0.7rem;
+  background: rgba(30, 10, 40, 0.75);
+  color: #fff;
+  font-size: 0.75rem;
   font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 10px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255,255,255,0.2);
+  z-index: 2;
 }
 .video-overlay {
   position: absolute;
   inset: 0;
   display: flex;
+  flex-direction: column;
+  gap: 4px;
   align-items: center;
   justify-content: center;
+  background: #1f0d2b;
+  color: var(--pink-300);
+  font-size: 0.82rem;
+  font-weight: 600;
+  z-index: 1;
+}
+.video-overlay-icon {
+  font-size: 1.8rem;
+}
   background: #1a0a2e;
   color: rgba(255,255,255,0.5);
   font-size: 0.8rem;
@@ -808,18 +842,86 @@ html, body {
 }
 .modal-hint { font-size: 0.82rem; color: var(--text-light); margin-bottom: 16px; }
 
-/* Responsive Mobile */
-@media (max-width: 600px) {
-  .main-layout { flex-direction: column; overflow-y: auto; height: calc(100vh - 52px); }
+/* Responsive Mobile & Landscape Mode */
+@media (max-width: 900px) and (orientation: landscape) {
+  html, body {
+    overflow: auto;
+    height: auto;
+  }
+  .screen {
+    position: relative;
+    height: auto;
+    min-height: 100vh;
+  }
+  .main-layout {
+    flex-direction: row;
+    height: auto;
+    min-height: calc(100vh - 52px);
+    overflow: visible;
+  }
+  .left-panel {
+    flex: 1.2;
+    overflow: visible;
+    padding: 10px;
+    border-right: 1.5px solid var(--pink-200);
+  }
+  .right-panel {
+    flex: 1;
+    overflow: visible;
+    padding: 10px;
+    height: auto;
+  }
+  .videos-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .video-wrapper {
+    aspect-ratio: 4/3;
+  }
+  .chat-section {
+    height: 280px;
+  }
+}
+
+@media (max-width: 768px) and (orientation: portrait) {
+  html, body {
+    overflow-y: auto;
+    height: 100%;
+  }
+  .screen {
+    position: relative;
+    height: auto;
+    min-height: 100%;
+    overflow-y: auto;
+  }
+  .main-layout {
+    flex-direction: column;
+    overflow-y: auto;
+    height: auto;
+  }
   .left-panel, .right-panel {
     flex: none;
     overflow: visible;
     border-right: none;
     padding: 10px;
   }
-  .left-panel { border-bottom: 1px solid var(--pink-200); }
-  .right-panel { height: calc(100vh - 52px); overflow: hidden; }
-  .vc-section { flex-shrink: 0; }
-  .videos-grid { max-height: 140px; }
-  .chat-section { flex: 1; }
+  .left-panel { border-bottom: 1.5px solid var(--pink-200); }
+  .right-panel {
+    height: auto;
+    overflow: visible;
+  }
+  .vc-section {
+    flex-shrink: 0;
+    margin-bottom: 10px;
+  }
+  .videos-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .video-wrapper {
+    aspect-ratio: 4/3;
+  }
+  .chat-section {
+    height: 320px;
+  }
 }

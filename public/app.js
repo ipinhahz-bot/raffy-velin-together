@@ -554,9 +554,9 @@ function handleMediaCallStream(call) {
   call.on('stream', (remoteStream) => {
     console.log('Received remote stream!');
     const remoteVideo = document.getElementById('remoteVideo');
-    remoteVideo.srcObject = remoteStream;
-    document.getElementById('remoteOverlay').style.display = 'none';
-    document.getElementById('remoteVideoWrapper').style.display = 'block';
+    if (remoteVideo) remoteVideo.srcObject = remoteStream;
+    const overlay = document.getElementById('remoteOverlay');
+    if (overlay) overlay.style.display = 'none';
     isCalling = true;
     updateCallBtn();
     addSystemMessage('📹 Pasangan terhubung di video call!');
@@ -577,8 +577,8 @@ function removeRemoteVideo() {
   if (remoteVideo) remoteVideo.srcObject = null;
   const overlay = document.getElementById('remoteOverlay');
   if (overlay) overlay.style.display = 'flex';
-  const wrapper = document.getElementById('remoteVideoWrapper');
-  if (wrapper) wrapper.style.display = 'none';
+  const overlayText = document.getElementById('remoteOverlayText');
+  if (overlayText) overlayText.textContent = 'Menunggu Pasangan...';
 }
 
 function endCall() {

@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Raffy & Velin 💕 Together</title>
   <meta name="description" content="Ruang virtual spesial buat Raffy & Velin — nonton bareng, ngobrol, video call walau jauh." />
   <meta name="theme-color" content="#f8a4c8" />
@@ -160,7 +160,10 @@
         <!-- Video Call Section -->
         <div class="vc-section">
           <div class="section-header">
-            <h3>📹 Video Call</h3>
+            <div class="vc-header-info">
+              <h3>📹 Video Call Berdua</h3>
+              <span class="vc-sub-badge">Face to Face 💕</span>
+            </div>
             <div class="vc-buttons">
               <button class="btn-vc" id="btnMic" onclick="toggleMic()" title="Mic">🎤</button>
               <button class="btn-vc" id="btnCam" onclick="toggleCam()" title="Kamera">📷</button>
@@ -171,15 +174,23 @@
           </div>
 
           <div class="videos-grid" id="videosGrid">
+            <!-- Kamera Raffy / Lokal -->
             <div class="video-wrapper local-video-wrapper">
               <video id="localVideo" autoplay muted playsinline></video>
-              <div class="video-label" id="localLabel">Kamu</div>
-              <div class="video-overlay" id="localOverlay">📷 Kamera Mati</div>
+              <div class="video-label" id="localLabel">Kamu 💖</div>
+              <div class="video-overlay" id="localOverlay">
+                <span class="video-overlay-icon">📷</span>
+                <span>Kamera Kamu Mati</span>
+              </div>
             </div>
-            <div class="video-wrapper remote-video-wrapper" id="remoteVideoWrapper" style="display:none;">
+            <!-- Kamera Velin / Pasangan -->
+            <div class="video-wrapper remote-video-wrapper" id="remoteVideoWrapper">
               <video id="remoteVideo" autoplay playsinline></video>
-              <div class="video-label" id="remoteLabel">Menunggu...</div>
-              <div class="video-overlay" id="remoteOverlay" style="display:none;">📷 Kamera Mati</div>
+              <div class="video-label" id="remoteLabel">Pasangan 💕</div>
+              <div class="video-overlay" id="remoteOverlay">
+                <span class="video-overlay-icon">✨</span>
+                <span id="remoteOverlayText">Menunggu Pasangan...</span>
+              </div>
             </div>
           </div>
         </div>
