@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Raffy & Velin 💕 Together</title>
   <meta name="description" content="Ruang virtual spesial buat Raffy & Velin — nonton bareng, ngobrol, video call walau jauh." />
   <meta name="theme-color" content="#f8a4c8" />
@@ -85,7 +85,7 @@
           <div class="online-dot"></div>
           <span id="onlineCount">1</span>
         </div>
-        <button class="btn-fullscreen-toggle" id="btnFullscreen" onclick="toggleFullscreenCinema()" title="Mode Bioskop Landscape">⛶ Fullscreen</button>
+        <button class="btn-fullscreen-toggle" id="btnFullscreen" type="button" onclick="toggleFullscreenCinema()">⛶ Fullscreen</button>
         <button class="btn-icon-only" onclick="leaveRoom()" title="Keluar">🚪</button>
       </div>
     </div>
@@ -125,13 +125,15 @@
             <div class="cinema-vc-bar" id="cinemaVcBar">
               <div class="cinema-cam-box local-box">
                 <video id="cinemaLocalVideo" autoplay muted playsinline></video>
-                <span class="cinema-cam-label">Raffy 💖</span>
+                <span class="cinema-cam-label" id="cinemaLocalLabel">Kamu 💖</span>
               </div>
               <div class="cinema-cam-box remote-box">
                 <video id="cinemaRemoteVideo" autoplay playsinline></video>
-                <span class="cinema-cam-label">Velin 💕</span>
+                <span class="cinema-cam-label" id="cinemaRemoteLabel">Pasangan 💕</span>
               </div>
             </div>
+            <!-- Exit Cinema Button -->
+            <button class="btn-exit-cinema" id="btnExitCinema" type="button" onclick="toggleFullscreenCinema()">✕ Keluar Bioskop</button>
           </div>
 
           <!-- Sync Controls -->

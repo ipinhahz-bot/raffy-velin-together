@@ -513,22 +513,40 @@ function toggleFullscreenCinema() {
 
   if (isCinema) {
     if (btn) btn.innerHTML = '✖ Keluar Fullscreen';
-    // Request device fullscreen & landscape lock if supported
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen().catch(() => {});
+
+    // Update labels
+    const cl = document.getElementById('cinemaLocalLabel');
+    const cr = document.getElementById('cinemaRemoteLabel');
+    if (cl) cl.textContent = myName ? `${myName} 💖` : 'Kamu 💖';
+    if (cr) cr.textContent = 'Pasangan 💕';
+
+    // Request fullscreen on video container or document
+    const elem = document.documentElement;
+    if (elem.requestFullscreen) {
+      elem.requestFullscreen().catch((err) => console.log('Fullscreen blocked:', err));
+    } else if (elem.webkitRequestFullscreen) {
+      elem.webkitRequestFullscreen();
     }
+
+    // Try screen orientation lock
     if (screen.orientation && screen.orientation.lock) {
       screen.orientation.lock('landscape').catch(() => {});
     }
+
     showToast('🎬 Mode Bioskop Landscape Aktif!');
   } else {
     if (btn) btn.innerHTML = '⛶ Fullscreen';
+
     if (document.exitFullscreen && document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
+    } else if (document.webkitExitFullscreen && document.webkitFullscreenElement) {
+      document.webkitExitFullscreen();
     }
+
     if (screen.orientation && screen.orientation.unlock) {
       screen.orientation.unlock();
     }
+    showToast('Keluar dari Mode Bioskop');
   }
 }
 
