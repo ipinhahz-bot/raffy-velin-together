@@ -301,22 +301,33 @@ function createPeerConnection() {
 async function startLocalStream(silent = false) {
   try {
     localStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        facingMode: 'user'
+      },
       audio: true
     });
 
     const localVid = document.getElementById('localVideo');
-    if (localVid) localVid.srcObject = localStream;
+    if (localVid) {
+      localVid.srcObject = localStream;
+      localVid.play().catch(() => {});
+    }
     const localOverlay = document.getElementById('localOverlay');
     if (localOverlay) localOverlay.style.display = 'none';
 
     syncCinemaStreams();
-    if (!silent) showToast('📷 Kamera & Mic kamu aktif!');
+    showToast('📷 Kamera & Mic kamu aktif!');
     return true;
   } catch (err) {
     console.warn('Media devices error:', err);
+    const localOverlayText = document.getElementById('localOverlayText');
+    if (localOverlayText) {
+      localOverlayText.textContent = 'Ketuk untuk Beri Izin Kamera';
+    }
     if (!silent) {
-      showToast('⚠️ Izinkan akses Kamera & Mic di browser HP ya!');
+      showToast('⚠️ Klik tombol Mulai VC / Izinkan Kamera di HP!');
     }
     return false;
   }
@@ -641,6 +652,8 @@ function showSyncStatus(text) {
 }
 
 // ===== UI & NAVIGATION =====
+let modalShownOnce = false;
+
 function enterApp() {
   const landing = document.getElementById('screenLanding');
   if (landing) {
@@ -658,12 +671,16 @@ function enterApp() {
   document.getElementById('localLabel').textContent = `${myName} 💖`;
   showToast(`💕 Ruangan aktif: ${currentRoom}`);
 
-  // Show room code modal after 1 second if host
-  if (isHost) {
+  // Hanya muncul 1 KALI saja pas buat ruangan pertama kali
+  if (isHost && !modalShownOnce) {
+    modalShownOnce = true;
     setTimeout(() => {
-      document.getElementById('modalRoomCode').textContent = currentRoom;
-      document.getElementById('modalOverlay').classList.add('open');
-    }, 800);
+      const modal = document.getElementById('modalOverlay');
+      if (modal) {
+        document.getElementById('modalRoomCode').textContent = currentRoom;
+        modal.classList.add('open');
+      }
+    }, 500);
   }
 }
 
@@ -780,13 +797,22 @@ function closeModal() {
 
 function copyAndClose() {
   const shareUrl = `${window.location.origin}${window.location.pathname}#${currentRoom}`;
-  navigator.clipboard.writeText(shareUrl).then(() => {
-    showToast('📋 Link ruangan disalin! Tinggal kirim ke Velin 💕');
-  }).catch(() => {
-    navigator.clipboard.writeText(currentRoom);
-    showToast('📋 Kode disalin: ' + currentRoom);
-  });
+  modalShownOnce = true;
   closeModal();
+
+  navigator.clipboard.writeText(shareUrl).then(() => {
+    showToast('📋 Link disalin! Kirim ke Velin 💕');
+  }).catch(() => {
+    showToast('📋 Kode ruangan: ' + currentRoom);
+  });
+}
+
+function closeModal() {
+  const modal = document.getElementById('modalOverlay');
+  if (modal) {
+    modal.classList.remove('open');
+    modal.style.display = 'none';
+  }
 }
 
 function showToast(msg) {
