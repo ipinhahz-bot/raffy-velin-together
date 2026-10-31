@@ -124,11 +124,11 @@
             <!-- Floating Video Call Pip Overlay for Cinema Mode -->
             <div class="cinema-vc-bar" id="cinemaVcBar">
               <div class="cinema-cam-box local-box">
-                <video id="cinemaLocalVideo" autoplay muted playsinline></video>
+                <video id="cinemaLocalVideo" autoplay muted playsinline webkit-playsinline></video>
                 <span class="cinema-cam-label" id="cinemaLocalLabel">Kamu 💖</span>
               </div>
               <div class="cinema-cam-box remote-box">
-                <video id="cinemaRemoteVideo" autoplay playsinline></video>
+                <video id="cinemaRemoteVideo" autoplay playsinline webkit-playsinline></video>
                 <span class="cinema-cam-label" id="cinemaRemoteLabel">Pasangan 💕</span>
               </div>
             </div>
@@ -192,7 +192,7 @@
           <div class="videos-grid" id="videosGrid">
             <!-- Kamera Raffy / Lokal -->
             <div class="video-wrapper local-video-wrapper" onclick="toggleCall()" style="cursor: pointer;">
-              <video id="localVideo" autoplay muted playsinline></video>
+              <video id="localVideo" autoplay muted playsinline webkit-playsinline></video>
               <div class="video-label" id="localLabel">Kamu 💖</div>
               <div class="video-overlay" id="localOverlay">
                 <span class="video-overlay-icon">📷</span>
@@ -201,7 +201,7 @@
             </div>
             <!-- Kamera Velin / Pasangan -->
             <div class="video-wrapper remote-video-wrapper" id="remoteVideoWrapper" onclick="toggleCall()" style="cursor: pointer;">
-              <video id="remoteVideo" autoplay playsinline></video>
+              <video id="remoteVideo" autoplay playsinline webkit-playsinline></video>
               <div class="video-label" id="remoteLabel">Pasangan 💕</div>
               <div class="video-overlay" id="remoteOverlay">
                 <span class="video-overlay-icon">✨</span>
@@ -261,6 +261,8 @@
     </div>
   </div>
 
+  <!-- MQTT Library for Realtime 24/7 Global Connection -->
+  <script src="mqtt.min.js"></script>
   <!-- App Script -->
   <script src="app.js"></script>
 </body>
