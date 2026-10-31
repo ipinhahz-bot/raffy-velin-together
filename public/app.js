@@ -23,7 +23,11 @@ let playerReady = false;
 let isSyncing = false;
 let isPlaying = false;
 let progressInterval = null;
-let currentVideoId = 'jfKfPfyJRdk'; // Default video: Lo-Fi beats
+let currentVideoId = '2Vv-BfVoq4g'; // Default video: Ed Sheeran - Perfect (Globally embeddable & romantic)
+
+// Chat drawer & notification
+let unreadChatCount = 0;
+let bubbleTimer = null;
 
 // ICE Configuration (Google STUN + Cloudflare + OpenRelay TURN for Cellular NAT)
 const ICE_CONFIG = {
@@ -66,7 +70,7 @@ window.onload = () => {
   if (hashRoom) {
     const inputRoom = document.getElementById('inputRoom');
     if (inputRoom) inputRoom.value = hashRoom;
-    showToast('🔑 Kode ruangan terisi dari link: ' + hashRoom);
+    showToast('🔑 Kode ruangan terisi: ' + hashRoom);
   }
 };
 
@@ -144,7 +148,6 @@ function connectToMqttRoom() {
         if (!err) {
           console.log('Subscribed to topic:', topic);
           showToast(`💕 Terhubung ke ruangan ${currentRoom}!`);
-          addSystemMessage(`💕 Kamu (${myName}) siap di ruangan ${currentRoom}`);
 
           // Broadcast kehadiran ke pasangan
           broadcastSignal({
@@ -197,14 +200,15 @@ async function handleSignalMessage(data) {
       partnerId = data.senderId;
       partnerName = data.userName;
       updateOnlineCount(2);
-      addSystemMessage(`💕 ${data.userName} bergabung ke ruangan!`);
       showToast(`💕 ${data.userName} sudah terhubung!`);
 
       // Update label video remote
       const rLabel = document.getElementById('remoteLabel');
       if (rLabel) rLabel.textContent = `${data.userName} 💕`;
-      const cLabel = document.getElementById('cinemaRemoteLabel');
-      if (cLabel) cLabel.textContent = `${data.userName} 💕`;
+
+      // Update judul chat
+      const chatTitle = document.getElementById('chatTitle');
+      if (chatTitle) chatTitle.textContent = `${myName} & ${data.userName} 💕`;
 
       // Balas sinyal bahwa kita juga ada di sini (handshake)
       broadcastSignal({
@@ -235,11 +239,13 @@ async function handleSignalMessage(data) {
       partnerId = data.senderId;
       partnerName = data.userName;
       updateOnlineCount(2);
-      addSystemMessage(`💕 ${data.userName} ada di ruangan!`);
+      showToast(`💕 ${data.userName} ada di ruangan!`);
+
       const rLabelAck = document.getElementById('remoteLabel');
       if (rLabelAck) rLabelAck.textContent = `${data.userName} 💕`;
-      const cLabelAck = document.getElementById('cinemaRemoteLabel');
-      if (cLabelAck) cLabelAck.textContent = `${data.userName} 💕`;
+
+      const chatTitleAck = document.getElementById('chatTitle');
+      if (chatTitleAck) chatTitleAck.textContent = `${myName} & ${data.userName} 💕`;
 
       if (isCalling && localStream) {
         setTimeout(() => initiateWebRtcCall(), 800);
@@ -254,14 +260,17 @@ async function handleSignalMessage(data) {
 
     case 'chat':
       appendMessage(data, false);
+      showFloatingChatBubble(data.userName, data.message);
       break;
 
     case 'typing':
-      document.getElementById('typingIndicator').textContent = `${data.userName} sedang mengetik...`;
+      const tip = document.getElementById('typingIndicator');
+      if (tip) tip.textContent = `${data.userName} sedang mengetik...`;
       break;
 
     case 'stop-typing':
-      document.getElementById('typingIndicator').textContent = '';
+      const tipStop = document.getElementById('typingIndicator');
+      if (tipStop) tipStop.textContent = '';
       break;
 
     case 'emoji':
@@ -277,7 +286,7 @@ async function handleSignalMessage(data) {
         player.playVideo();
         isPlaying = true;
         updatePlayPauseBtn();
-        showSyncStatus('▶️ Diputar bersama');
+        showToast('▶️ Video diputar bersama');
         setTimeout(() => { isSyncing = false; }, 600);
       }
       break;
@@ -289,7 +298,7 @@ async function handleSignalMessage(data) {
         player.pauseVideo();
         isPlaying = false;
         updatePlayPauseBtn();
-        showSyncStatus('⏸️ Dijeda bersama');
+        showToast('⏸️ Video dijeda bersama');
         setTimeout(() => { isSyncing = false; }, 600);
       }
       break;
@@ -302,16 +311,15 @@ async function handleSignalMessage(data) {
 
     case 'video-change':
       loadYouTubeById(data.videoId, 0, true);
-      showSyncStatus('🎬 Video baru dimuat!');
+      showToast('🎬 Video baru dimuat bersama!');
       break;
 
     // WebRTC Signaling
     case 'call-request':
       showToast(`📹 ${data.userName} menyalakan kamera!`);
       if (!localStream) {
-        // Jika kita belum aktifkan kamera, tawarkan aktivasi
         const localOverlayText = document.getElementById('localOverlayText');
-        if (localOverlayText) localOverlayText.textContent = 'Ketuk untuk Masuk VC';
+        if (localOverlayText) localOverlayText.textContent = 'Ketuk Masuk VC';
       }
       break;
 
@@ -369,12 +377,9 @@ function createPeerConnection() {
     const remoteOverlay = document.getElementById('remoteOverlay');
     if (remoteOverlay) remoteOverlay.style.display = 'none';
 
-    syncCinemaStreams();
-
     isCalling = true;
     updateCallBtn();
-    addSystemMessage('📹 Wajah pasangan sudah tampil di layar!');
-    showToast('📹 Pasangan terhubung di video call!');
+    showToast(`📹 Wajah ${partnerName || 'pasangan'} sudah tampil!`);
   };
 
   peerConnection.onicecandidate = (event) => {
@@ -419,14 +424,13 @@ async function startLocalStream() {
     const localOverlay = document.getElementById('localOverlay');
     if (localOverlay) localOverlay.style.display = 'none';
 
-    syncCinemaStreams();
-    showToast('📷 Kamera & Mic kamu aktif!');
+    showToast('📷 Kamera kamu aktif!');
     return true;
   } catch (err) {
     console.error('Media devices error:', err);
-    showToast('⚠️ Klik Izinkan Kamera & Mikrofon di browser HP!');
+    showToast('⚠️ Klik Izinkan Kamera & Mikrofon di browser!');
     const localOverlayText = document.getElementById('localOverlayText');
-    if (localOverlayText) localOverlayText.textContent = 'Ketuk untuk Izinkan Kamera';
+    if (localOverlayText) localOverlayText.textContent = 'Ketuk untuk Izinkan';
     return false;
   }
 }
@@ -437,7 +441,7 @@ async function toggleCall() {
     endCall();
     broadcastSignal({ type: 'call-ended' });
   } else {
-    showToast('📷 Membuka kamera...');
+    showToast('📷 Menyalakan kamera...');
     const ok = await startLocalStream();
     if (!ok) return;
 
@@ -447,7 +451,14 @@ async function toggleCall() {
     // Beritahu pasangan & inisiasi offer
     broadcastSignal({ type: 'call-request', userName: myName });
     initiateWebRtcCall();
-    addSystemMessage('📹 Memulai video call, menunggu pasangan...');
+    showToast('📹 Menghubungi pasangan...');
+  }
+}
+
+function handleCamTileClick(e) {
+  if (e.target.closest('button')) return;
+  if (!isCalling || !localStream) {
+    toggleCall();
   }
 }
 
@@ -470,7 +481,6 @@ async function initiateWebRtcCall() {
 }
 
 async function handleWebRtcOffer(offer, callerName) {
-  // Pastikan kamera kita juga siap
   await startLocalStream();
 
   const pc = createPeerConnection();
@@ -510,9 +520,7 @@ function handleRemoteCallEnded() {
   if (overlay) overlay.style.display = 'flex';
 
   const overlayText = document.getElementById('remoteOverlayText');
-  if (overlayText) overlayText.textContent = 'Menunggu Pasangan...';
-
-  syncCinemaStreams();
+  if (overlayText) overlayText.textContent = 'Menunggu...';
 }
 
 function endCall() {
@@ -533,7 +541,6 @@ function endCall() {
   handleRemoteCallEnded();
   isCalling = false;
   updateCallBtn();
-  addSystemMessage('📹 Video call diakhiri');
   showToast('📹 Video call dimatikan');
 }
 
@@ -542,10 +549,10 @@ function updateCallBtn() {
   if (!btn) return;
   if (isCalling) {
     btn.classList.add('active');
-    btn.innerHTML = '<span>Tutup VC</span><span class="btn-icon">📵</span>';
+    btn.textContent = '📵';
   } else {
     btn.classList.remove('active');
-    btn.innerHTML = '<span>Mulai VC</span><span class="btn-icon">📹</span>';
+    btn.textContent = '📹';
   }
 }
 
@@ -573,20 +580,99 @@ function toggleCam() {
   showToast(camEnabled ? '📷 Kamera Nyala' : '🚫 Kamera Mati');
 }
 
+// ===== FLOATING DRAGGABLE CAMERA LOGIC =====
+function initDraggableCam() {
+  const box = document.getElementById('floatingCamBox');
+  const header = document.getElementById('floatingCamHeader');
+  if (!box || !header) return;
+
+  let isDragging = false;
+  let startX = 0, startY = 0;
+  let initLeft = 0, initTop = 0;
+
+  function onPointerDown(e) {
+    // Abaikan jika mengklik tombol di header
+    if (e.target.closest('button, input, select')) return;
+
+    const isTouch = e.type.startsWith('touch');
+    const pageX = isTouch ? e.touches[0].clientX : e.clientX;
+    const pageY = isTouch ? e.touches[0].clientY : e.clientY;
+
+    isDragging = true;
+    startX = pageX;
+    startY = pageY;
+
+    const rect = box.getBoundingClientRect();
+    initLeft = rect.left;
+    initTop = rect.top;
+
+    box.style.right = 'auto';
+    box.style.bottom = 'auto';
+    box.style.left = initLeft + 'px';
+    box.style.top = initTop + 'px';
+
+    if (isTouch) {
+      window.addEventListener('touchmove', onPointerMove, { passive: false });
+      window.addEventListener('touchend', onPointerUp);
+      window.addEventListener('touchcancel', onPointerUp);
+    } else {
+      window.addEventListener('mousemove', onPointerMove);
+      window.addEventListener('mouseup', onPointerUp);
+    }
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+    const isTouch = e.type.startsWith('touch');
+    const pageX = isTouch ? e.touches[0].clientX : e.clientX;
+    const pageY = isTouch ? e.touches[0].clientY : e.clientY;
+
+    const dx = pageX - startX;
+    const dy = pageY - startY;
+
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      if (e.cancelable) e.preventDefault();
+    }
+
+    const maxX = window.innerWidth - box.offsetWidth - 8;
+    const maxY = window.innerHeight - box.offsetHeight - 8;
+
+    const newLeft = Math.max(8, Math.min(maxX, initLeft + dx));
+    const newTop = Math.max(8, Math.min(maxY, initTop + dy));
+
+    box.style.left = newLeft + 'px';
+    box.style.top = newTop + 'px';
+  }
+
+  function onPointerUp() {
+    if (!isDragging) return;
+    isDragging = false;
+    window.removeEventListener('mousemove', onPointerMove);
+    window.removeEventListener('mouseup', onPointerUp);
+    window.removeEventListener('touchmove', onPointerMove);
+    window.removeEventListener('touchend', onPointerUp);
+    window.removeEventListener('touchcancel', onPointerUp);
+  }
+
+  header.addEventListener('mousedown', onPointerDown);
+  header.addEventListener('touchstart', onPointerDown, { passive: false });
+}
+
+function toggleMinimizeCam() {
+  const box = document.getElementById('floatingCamBox');
+  const btn = document.getElementById('btnMinimizeCam');
+  if (!box) return;
+  const isMin = box.classList.toggle('minimized');
+  if (btn) btn.textContent = isMin ? '➕' : '➖';
+}
+
 // ===== CINEMA FULLSCREEN LANDSCAPE =====
 function toggleFullscreenCinema() {
   const isCinema = document.body.classList.toggle('cinema-fullscreen');
   const btn = document.getElementById('btnFullscreen');
 
-  syncCinemaStreams();
-
   if (isCinema) {
-    if (btn) btn.innerHTML = '✖ Keluar Fullscreen';
-
-    const cl = document.getElementById('cinemaLocalLabel');
-    const cr = document.getElementById('cinemaRemoteLabel');
-    if (cl) cl.textContent = myName ? `${myName} 💖` : 'Kamu 💖';
-    if (cr) cr.textContent = partnerName ? `${partnerName} 💕` : 'Pasangan 💕';
+    if (btn) btn.innerHTML = '✖ Keluar';
 
     const elem = document.documentElement;
     if (elem.requestFullscreen) {
@@ -599,7 +685,7 @@ function toggleFullscreenCinema() {
       screen.orientation.lock('landscape').catch(() => {});
     }
 
-    showToast('🎬 Mode Bioskop Landscape Aktif!');
+    showToast('🎬 Bioskop Fullscreen Aktif!');
   } else {
     if (btn) btn.innerHTML = '⛶ Fullscreen';
 
@@ -612,22 +698,6 @@ function toggleFullscreenCinema() {
     if (screen.orientation && screen.orientation.unlock) {
       screen.orientation.unlock();
     }
-  }
-}
-
-function syncCinemaStreams() {
-  const cinemaLocal = document.getElementById('cinemaLocalVideo');
-  const cinemaRemote = document.getElementById('cinemaRemoteVideo');
-  const localVid = document.getElementById('localVideo');
-  const remoteVid = document.getElementById('remoteVideo');
-
-  if (cinemaLocal && localVid && localVid.srcObject) {
-    cinemaLocal.srcObject = localVid.srcObject;
-    cinemaLocal.play().catch(() => {});
-  }
-  if (cinemaRemote && remoteVid && remoteVid.srcObject) {
-    cinemaRemote.srcObject = remoteVid.srcObject;
-    cinemaRemote.play().catch(() => {});
   }
 }
 
@@ -671,13 +741,11 @@ function onPlayerStateChange(event) {
     updatePlayPauseBtn();
     const currentTime = player.getCurrentTime();
     broadcastSignal({ type: 'video-play', currentTime });
-    showSyncStatus('▶️ Memutar video...');
   } else if (event.data === YT.PlayerState.PAUSED) {
     isPlaying = false;
     updatePlayPauseBtn();
     const currentTime = player.getCurrentTime();
     broadcastSignal({ type: 'video-pause', currentTime });
-    showSyncStatus('⏸️ Menjeda video...');
   }
 }
 
@@ -713,8 +781,10 @@ function startProgressTracker() {
     const duration = player.getDuration();
     if (duration > 0) {
       const pct = (current / duration) * 100;
-      document.getElementById('progressFill').style.width = pct + '%';
-      document.getElementById('timeDisplay').textContent = `${formatTime(current)} / ${formatTime(duration)}`;
+      const fill = document.getElementById('progressFill');
+      if (fill) fill.style.width = pct + '%';
+      const timeEl = document.getElementById('timeDisplay');
+      if (timeEl) timeEl.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
     }
   }, 500);
 }
@@ -728,7 +798,12 @@ function formatTime(s) {
 function toggleVideoInput() {
   const el = document.getElementById('videoInputArea');
   if (el) {
-    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'flex' : 'none';
+    const isHidden = el.style.display === 'none' || el.style.display === '';
+    el.style.display = isHidden ? 'flex' : 'none';
+    if (isHidden) {
+      const inp = document.getElementById('inputVideoUrl');
+      if (inp) inp.focus();
+    }
   }
 }
 
@@ -747,6 +822,7 @@ function loadVideo() {
   loadYouTubeById(videoId, 0, true);
   broadcastSignal({ type: 'video-change', videoId });
   input.value = '';
+  toggleVideoInput();
 }
 
 function loadYouTubeById(id, startTime = 0, autoPlay = false) {
@@ -768,14 +844,6 @@ function extractYouTubeId(url) {
   return (match && match[2].length === 11) ? match[2] : null;
 }
 
-function showSyncStatus(text) {
-  const el = document.getElementById('syncStatus');
-  if (!el) return;
-  el.textContent = text;
-  el.classList.add('active');
-  setTimeout(() => el.classList.remove('active'), 2500);
-}
-
 // ===== UI & NAVIGATION =====
 function enterApp() {
   const landing = document.getElementById('screenLanding');
@@ -792,6 +860,8 @@ function enterApp() {
 
   document.getElementById('roomIdDisplay').textContent = currentRoom;
   document.getElementById('localLabel').textContent = `${myName} 💖`;
+
+  initDraggableCam();
 
   // Tampilkan modal kode ruangan HANYA 1 KALI untuk pembuat ruangan (Host)
   if (isHost && !modalClosed) {
@@ -815,9 +885,74 @@ function leaveRoom() {
   }
 }
 
-// ===== CHAT =====
+// ===== CHAT DRAWER & BUBBLE =====
 let typingTimer = null;
 let isTyping = false;
+
+function toggleChatDrawer() {
+  const overlay = document.getElementById('chatDrawerOverlay');
+  if (!overlay) return;
+  const isOpen = overlay.classList.toggle('open');
+  if (isOpen) {
+    unreadChatCount = 0;
+    updateChatBadge();
+    const input = document.getElementById('chatInput');
+    if (input) setTimeout(() => input.focus(), 200);
+    const msgs = document.getElementById('chatMessages');
+    if (msgs) msgs.scrollTop = msgs.scrollHeight;
+  }
+}
+
+function closeChatDrawer(e) {
+  if (e.target.id === 'chatDrawerOverlay') {
+    toggleChatDrawer();
+  }
+}
+
+function updateChatBadge() {
+  const badge = document.getElementById('chatBadge');
+  if (!badge) return;
+  if (unreadChatCount > 0) {
+    badge.textContent = unreadChatCount;
+    badge.style.display = 'inline-flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function showFloatingChatBubble(sender, text) {
+  const overlay = document.getElementById('chatDrawerOverlay');
+  // Jika drawer sedang dibuka, tidak perlu popup gelembung
+  if (overlay && overlay.classList.contains('open')) return;
+
+  unreadChatCount++;
+  updateChatBadge();
+
+  const bubble = document.getElementById('floatingChatBubble');
+  const s = document.getElementById('bubbleSender');
+  const t = document.getElementById('bubbleText');
+  if (!bubble || !s || !t) return;
+
+  s.textContent = `${sender}:`;
+  t.textContent = text;
+  bubble.style.display = 'flex';
+  bubble.classList.remove('fade-out');
+
+  clearTimeout(bubbleTimer);
+  bubbleTimer = setTimeout(() => {
+    bubble.classList.add('fade-out');
+    setTimeout(() => { bubble.style.display = 'none'; }, 400);
+  }, 4000);
+}
+
+function openChatFromBubble() {
+  const bubble = document.getElementById('floatingChatBubble');
+  if (bubble) bubble.style.display = 'none';
+  const overlay = document.getElementById('chatDrawerOverlay');
+  if (overlay && !overlay.classList.contains('open')) {
+    toggleChatDrawer();
+  }
+}
 
 function sendMessage() {
   const input = document.getElementById('chatInput');
@@ -867,16 +1002,6 @@ function appendMessage(data, isSelf) {
     <div class="msg-bubble">${escapeHtml(data.message)}</div>
     <div class="msg-time">${data.timestamp}</div>
   `;
-  chatMessages.appendChild(div);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-function addSystemMessage(text) {
-  const chatMessages = document.getElementById('chatMessages');
-  if (!chatMessages) return;
-  const div = document.createElement('div');
-  div.className = 'chat-system-msg';
-  div.textContent = text;
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
