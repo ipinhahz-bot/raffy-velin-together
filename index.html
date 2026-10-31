@@ -2,14 +2,14 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
-  <title>Raffy &amp; Velin 💕 Together</title>
-  <meta name="description" content="Ruang virtual spesial Raffy &amp; Velin — nonton bareng YouTube, video call berdua, chat live." />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Raffy & Velin 💕 Together</title>
+  <meta name="description" content="Ruang virtual spesial buat Raffy & Velin — nonton bareng, ngobrol, video call walau jauh." />
   <meta name="theme-color" content="#f8a4c8" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Pacifico&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Pacifico&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -24,7 +24,7 @@
         <div class="logo-icon">💕</div>
         <h1 class="logo-title">Together</h1>
         <p class="logo-sub">Raffy <span class="heart-divider">♥</span> Velin</p>
-        <p class="tagline">Jauh di mata, selalu dekat di hati 🌸</p>
+        <p class="tagline">Jauh di mata, deket di hati 🌸</p>
       </div>
 
       <div class="card join-card">
@@ -60,183 +60,194 @@
       </div>
 
       <div class="features-preview">
-        <div class="feature-chip">🎬 Nobar Layar Penuh</div>
-        <div class="feature-chip">📹 Kamera Geser Bebas</div>
-        <div class="feature-chip">💬 Chat Privat</div>
-        <div class="feature-chip">💖 Reaksi Realtime</div>
+        <div class="feature-chip">🎬 Nobar Bareng</div>
+        <div class="feature-chip">📹 Video Call</div>
+        <div class="feature-chip">💬 Chat Live</div>
+        <div class="feature-chip">😊 Reaksi Emoji</div>
       </div>
     </div>
   </div>
 
-  <!-- SCREEN 2: Main App (Full-Screen YouTube Hero & Draggable Floating Dual Cam) -->
+  <!-- SCREEN 2: Main App -->
   <div class="screen" id="screenApp">
 
     <!-- Top Bar -->
-    <header class="topbar" id="topbar">
+    <div class="topbar">
       <div class="topbar-left">
         <span class="topbar-logo">💕 Together</span>
-        <div class="room-badge" onclick="copyRoomId()" title="Klik untuk salin kode ruangan">
-          <span>🔑 <span id="roomIdDisplay">------</span></span>
-          <button class="copy-btn" title="Salin kode">📋</button>
+        <div class="room-badge">
+          <span id="roomIdDisplay"></span>
+          <button class="copy-btn" onclick="copyRoomId()" title="Salin kode ruangan">📋</button>
         </div>
       </div>
       <div class="topbar-right">
-        <div class="users-online" id="usersOnline" title="Status Terhubung">
+        <div class="users-online" id="usersOnline">
           <div class="online-dot"></div>
           <span id="onlineCount">1</span>
         </div>
-        <button class="btn-topbar" id="btnToggleVideoInput" onclick="toggleVideoInput()" title="Ganti Video YouTube">🎬 Ganti Video</button>
-        <button class="btn-topbar" id="btnToggleChat" onclick="toggleChatDrawer()" title="Buka Chat">💬 Chat <span class="chat-badge" id="chatBadge" style="display:none;">0</span></button>
-        <button class="btn-fullscreen-toggle" id="btnFullscreen" type="button" onclick="toggleFullscreenCinema()" title="Layar Penuh Landscape">⛶ Fullscreen</button>
-        <button class="btn-icon-only" onclick="leaveRoom()" title="Keluar Ruangan">🚪</button>
-      </div>
-    </header>
-
-    <!-- Watch Stage (Full-Screen YouTube Main View) -->
-    <main class="watch-stage" id="watchStage">
-
-      <!-- YouTube Player Container (Dominant View) -->
-      <div class="youtube-container" id="youtubeContainer">
-        <div class="no-video-placeholder" id="noVideoPlaceholder" style="display:none;">
-          <div class="placeholder-emoji">🎬</div>
-          <p>Belum ada video diputar</p>
-          <button class="btn-primary btn-sm" onclick="toggleVideoInput()">Pilih Video YouTube</button>
-        </div>
-        <div id="ytPlayer"></div>
-      </div>
-
-      <!-- Floating Draggable Dual Camera (Muka Kita Berdua - Bisa Digeser-geser) -->
-      <div class="floating-cam-box" id="floatingCamBox">
-        <!-- Drag Header & Control Handle -->
-        <div class="floating-cam-header" id="floatingCamHeader">
-          <div class="drag-handle-pill" title="Tahan dan geser kamera ke mana saja">
-            <span class="drag-dots">⋮⋮</span>
-            <span class="drag-text">Geser</span>
-          </div>
-          <div class="cam-quick-controls">
-            <button class="cam-btn-icon" id="btnMic" onclick="toggleMic()" title="Mic Nyala/Mati">🎤</button>
-            <button class="cam-btn-icon" id="btnCam" onclick="toggleCam()" title="Kamera Nyala/Mati">📷</button>
-            <button class="cam-btn-icon" id="btnCall" onclick="toggleCall()" title="Mulai / Akhiri Video Call">📹</button>
-            <button class="cam-btn-icon" id="btnMinimizeCam" onclick="toggleMinimizeCam()" title="Kecilkan / Perbesar Kotak">➖</button>
-          </div>
-        </div>
-
-        <!-- Dual Cam Feed Area -->
-        <div class="floating-cam-body" id="floatingCamBody">
-          <!-- Kamera Lokal (Raffy / Kamu) -->
-          <div class="cam-tile local-tile" onclick="handleCamTileClick(event)" title="Ketuk untuk mulai kamera">
-            <video id="localVideo" autoplay muted playsinline webkit-playsinline></video>
-            <div class="cam-badge" id="localLabel">Kamu 💖</div>
-            <div class="cam-overlay" id="localOverlay">
-              <span class="cam-overlay-icon">📷</span>
-              <span id="localOverlayText">Ketuk Kamera</span>
-            </div>
-          </div>
-
-          <!-- Kamera Remote (Velin / Pasangan) -->
-          <div class="cam-tile remote-tile" onclick="handleCamTileClick(event)" title="Ketuk untuk mulai panggilan">
-            <video id="remoteVideo" autoplay playsinline webkit-playsinline></video>
-            <div class="cam-badge" id="remoteLabel">Pasangan 💕</div>
-            <div class="cam-overlay" id="remoteOverlay">
-              <span class="cam-overlay-icon">✨</span>
-              <span id="remoteOverlayText">Menunggu...</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Video Input Dropdown / Floating Modal -->
-      <div class="video-input-modal" id="videoInputArea" style="display:none;">
-        <div class="video-input-header">
-          <h4>🎬 Putar Video YouTube Bersama</h4>
-          <button class="close-input-btn" onclick="toggleVideoInput()">✕</button>
-        </div>
-        <div class="input-wrapper">
-          <span class="input-icon">🔗</span>
-          <input type="text" id="inputVideoUrl" placeholder="Paste link YouTube (misal: https://youtu.be/...)" />
-        </div>
-        <div class="video-input-actions">
-          <button class="btn-primary" onclick="loadVideo()">
-            <span>Putar Video</span> 🎬
-          </button>
-        </div>
-      </div>
-
-      <!-- Bottom Dock: Sync Controls & Quick Emoji Bar -->
-      <div class="bottom-dock" id="bottomDock">
-        <div class="sync-controls" id="syncControls">
-          <button class="sync-btn" id="btnPlayPause" onclick="togglePlay()" title="Play / Pause">
-            ▶️
-          </button>
-          <div class="progress-bar-container" id="progressContainer" onclick="seekTo(event)">
-            <div class="progress-bar" id="progressBar">
-              <div class="progress-fill" id="progressFill"></div>
-            </div>
-          </div>
-          <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
-          <button class="sync-btn-sm" onclick="toggleFullscreenCinema()" title="Layar Penuh Landscape">⛶</button>
-        </div>
-
-        <div class="emoji-dock-row">
-          <button class="emoji-pill" onclick="sendEmoji('😂')">😂</button>
-          <button class="emoji-pill" onclick="sendEmoji('😍')">😍</button>
-          <button class="emoji-pill" onclick="sendEmoji('❤️')">❤️</button>
-          <button class="emoji-pill" onclick="sendEmoji('😭')">😭</button>
-          <button class="emoji-pill" onclick="sendEmoji('🥰')">🥰</button>
-          <button class="emoji-pill" onclick="sendEmoji('🤣')">🤣</button>
-          <button class="emoji-pill" onclick="sendEmoji('👏')">👏</button>
-          <button class="emoji-pill" onclick="sendEmoji('✨')">✨</button>
-        </div>
-      </div>
-
-      <!-- Floating Chat Bubble (Pop up saat chat masuk dan drawer tertutup) -->
-      <div class="floating-chat-bubble" id="floatingChatBubble" style="display:none;" onclick="openChatFromBubble()">
-        <span class="bubble-sender" id="bubbleSender">Velin:</span>
-        <span class="bubble-text" id="bubbleText">Halo sayang 💕</span>
-      </div>
-
-      <!-- Exit Fullscreen Floating Button (Muncul di Fullscreen Cinema) -->
-      <button class="btn-exit-cinema" id="btnExitCinema" type="button" onclick="toggleFullscreenCinema()">✕ Keluar Bioskop</button>
-
-    </main>
-
-    <!-- Slide-up Chat Drawer (Tampil bersih tanpa notifikasi spam) -->
-    <div class="chat-drawer-overlay" id="chatDrawerOverlay" onclick="closeChatDrawer(event)">
-      <div class="chat-drawer" id="chatDrawer">
-        <div class="chat-drawer-header">
-          <div class="chat-header-title">
-            <span class="chat-icon">💬</span>
-            <span id="chatTitle">Ruang Chat Raffy &amp; Velin 💕</span>
-          </div>
-          <button class="btn-close-drawer" onclick="toggleChatDrawer()">✕</button>
-        </div>
-
-        <div class="typing-indicator" id="typingIndicator"></div>
-
-        <div class="chat-messages" id="chatMessages">
-          <div class="chat-welcome">
-            <span>💕 Selamat ngobrol Raffy &amp; Velin! Pesan kalian aman &amp; privat di sini.</span>
-          </div>
-        </div>
-
-        <div class="chat-input-area">
-          <div class="chat-input-wrapper">
-            <input
-              type="text"
-              id="chatInput"
-              placeholder="Ketik pesan cinta..."
-              maxlength="200"
-              onkeydown="handleChatKey(event)"
-              oninput="handleTyping()"
-            />
-            <button class="btn-send" onclick="sendMessage()">
-              <span>➤</span>
-            </button>
-          </div>
-        </div>
+        <button class="btn-fullscreen-toggle" id="btnFullscreen" type="button" onclick="toggleFullscreenCinema()">⛶ Fullscreen</button>
+        <button class="btn-icon-only" onclick="leaveRoom()" title="Keluar">🚪</button>
       </div>
     </div>
 
+    <!-- Main Content Area -->
+    <div class="main-layout">
+
+      <!-- Left: Video + Controls -->
+      <div class="left-panel">
+
+        <!-- Video Section -->
+        <div class="video-section">
+          <div class="section-header">
+            <h3>🎬 Nobar</h3>
+            <button class="btn-small" onclick="toggleVideoInput()">Ganti Video</button>
+          </div>
+
+          <div class="video-input-area" id="videoInputArea" style="display:none;">
+            <div class="input-wrapper">
+              <span class="input-icon">🔗</span>
+              <input type="text" id="inputVideoUrl" placeholder="Paste link YouTube di sini..." />
+            </div>
+            <button class="btn-primary btn-sm" onclick="loadVideo()">
+              <span>Muat Video</span> 🎬
+            </button>
+          </div>
+
+          <div class="youtube-container" id="youtubeContainer">
+            <div class="no-video-placeholder" id="noVideoPlaceholder" style="display:none;">
+              <div class="placeholder-emoji">🎬</div>
+              <p>Belum ada video</p>
+              <p class="placeholder-sub">Klik "Ganti Video" dan masukkan link YouTube</p>
+            </div>
+            <div id="ytPlayer"></div>
+
+            <!-- Floating Video Call Pip Overlay for Cinema Mode (Draggable) -->
+            <div class="cinema-vc-bar" id="cinemaVcBar">
+              <div class="cinema-drag-handle" id="cinemaDragHandle" title="Tahan dan geser kamera ke mana saja">
+                <span>⋮⋮ Geser Layar</span>
+              </div>
+              <div class="cinema-cams-row">
+                <div class="cinema-cam-box local-box" onclick="toggleCall()" title="Kamera Kamu">
+                  <video id="cinemaLocalVideo" autoplay muted playsinline webkit-playsinline></video>
+                  <span class="cinema-cam-label" id="cinemaLocalLabel">Kamu 💖</span>
+                </div>
+                <div class="cinema-cam-box remote-box" onclick="toggleCall()" title="Kamera Pasangan">
+                  <video id="cinemaRemoteVideo" autoplay playsinline webkit-playsinline></video>
+                  <span class="cinema-cam-label" id="cinemaRemoteLabel">Pasangan 💕</span>
+                </div>
+              </div>
+            </div>
+            <!-- Exit Cinema Button -->
+            <button class="btn-exit-cinema" id="btnExitCinema" type="button" onclick="toggleFullscreenCinema()">✕ Keluar Bioskop</button>
+          </div>
+
+          <!-- Sync Controls -->
+          <div class="sync-controls" id="syncControls">
+            <button class="sync-btn" id="btnPlayPause" onclick="togglePlay()">
+              ▶️
+            </button>
+            <div class="progress-bar-container" id="progressContainer" onclick="seekTo(event)">
+              <div class="progress-bar" id="progressBar">
+                <div class="progress-fill" id="progressFill"></div>
+              </div>
+            </div>
+            <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
+            <button class="sync-btn-sm" onclick="toggleFullscreenCinema()" title="Layar Penuh Landscape">⛶</button>
+          </div>
+
+          <div class="sync-status" id="syncStatus"></div>
+        </div>
+
+        <!-- Emoji Reactions -->
+        <div class="emoji-section">
+          <p class="emoji-label">Reaksi Cepat</p>
+          <div class="emoji-buttons">
+            <button class="emoji-btn" onclick="sendEmoji('😂')">😂</button>
+            <button class="emoji-btn" onclick="sendEmoji('😍')">😍</button>
+            <button class="emoji-btn" onclick="sendEmoji('😱')">😱</button>
+            <button class="emoji-btn" onclick="sendEmoji('❤️')">❤️</button>
+            <button class="emoji-btn" onclick="sendEmoji('🤣')">🤣</button>
+            <button class="emoji-btn" onclick="sendEmoji('😭')">😭</button>
+            <button class="emoji-btn" onclick="sendEmoji('🥰')">🥰</button>
+            <button class="emoji-btn" onclick="sendEmoji('👏')">👏</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right: VC + Chat -->
+      <div class="right-panel">
+
+        <!-- Video Call Section -->
+        <div class="vc-section">
+          <div class="section-header">
+            <div class="vc-header-info">
+              <h3>📹 Video Call Berdua</h3>
+              <span class="vc-sub-badge">Face to Face 💕</span>
+            </div>
+            <div class="vc-buttons">
+              <button class="btn-vc" id="btnMic" onclick="toggleMic()" title="Mic">🎤</button>
+              <button class="btn-vc" id="btnCam" onclick="toggleCam()" title="Kamera">📷</button>
+              <button class="btn-vc-call" id="btnCall" onclick="toggleCall()">
+                <span id="callBtnText">📹 Mulai VC</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="videos-grid" id="videosGrid">
+            <!-- Kamera Raffy / Lokal -->
+            <div class="video-wrapper local-video-wrapper" onclick="toggleCall()" style="cursor: pointer;">
+              <video id="localVideo" autoplay muted playsinline webkit-playsinline></video>
+              <div class="video-label" id="localLabel">Kamu 💖</div>
+              <div class="video-overlay" id="localOverlay">
+                <span class="video-overlay-icon">📷</span>
+                <span id="localOverlayText">Ketuk untuk Nyalakan Kamera</span>
+              </div>
+            </div>
+            <!-- Kamera Velin / Pasangan -->
+            <div class="video-wrapper remote-video-wrapper" id="remoteVideoWrapper" onclick="toggleCall()" style="cursor: pointer;">
+              <video id="remoteVideo" autoplay playsinline webkit-playsinline></video>
+              <div class="video-label" id="remoteLabel">Pasangan 💕</div>
+              <div class="video-overlay" id="remoteOverlay">
+                <span class="video-overlay-icon">✨</span>
+                <span id="remoteOverlayText">Menunggu Pasangan...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Section -->
+        <div class="chat-section">
+          <div class="section-header">
+            <h3>💬 Chat</h3>
+            <span class="typing-indicator" id="typingIndicator"></span>
+          </div>
+
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-welcome">
+              <span>💕 Selamat datang di ruangan Raffy & Velin!</span>
+            </div>
+          </div>
+
+          <div class="chat-input-area">
+            <div class="chat-input-wrapper">
+              <input
+                type="text"
+                id="chatInput"
+                placeholder="Ketik pesan..."
+                maxlength="200"
+                onkeydown="handleChatKey(event)"
+                oninput="handleTyping()"
+              />
+              <button class="btn-send" onclick="sendMessage()">
+                <span>➤</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
   </div>
 
   <!-- Emoji Float Container -->
@@ -250,8 +261,8 @@
     <div class="modal">
       <h3>🔑 Kode Ruangan</h3>
       <div class="room-code-display" id="modalRoomCode"></div>
-      <p class="modal-hint">Bagikan tautan ini ke pasangan kamu agar langsung terhubung!</p>
-      <button class="btn-primary" type="button" onclick="copyAndClose()">📋 Salin Link &amp; Tutup</button>
+      <p class="modal-hint">Bagikan kode ini ke pasangan kamu agar bisa gabung!</p>
+      <button class="btn-primary" type="button" onclick="copyAndClose()">📋 Salin Link & Tutup</button>
     </div>
   </div>
 
