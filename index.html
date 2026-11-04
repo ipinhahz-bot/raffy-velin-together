@@ -106,7 +106,7 @@
           <div class="video-input-area" id="videoInputArea" style="display:none;">
             <div class="input-wrapper">
               <span class="input-icon">🔗</span>
-              <input type="text" id="inputVideoUrl" placeholder="Paste link YouTube di sini..." />
+              <input type="text" id="inputVideoUrl" placeholder="Paste link YouTube di sini..." onkeydown="if(event.key==='Enter') loadVideo()" />
             </div>
             <button class="btn-primary btn-sm" onclick="loadVideo()">
               <span>Muat Video</span> 🎬

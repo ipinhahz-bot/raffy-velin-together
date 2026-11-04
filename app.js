@@ -9,6 +9,7 @@ let modalClosed = false;
 
 // Realtime MQTT (HiveMQ Public Global WSS Broker)
 let mqttClient = null;
+let signalQueue = [];
 
 // WebRTC Direct Stream & Audio
 let peerConnection = null;
@@ -18,13 +19,15 @@ let micEnabled = true;
 let camEnabled = true;
 let iceCandidatesQueue = [];
 
-// YouTube Player Sync
+// YouTube Player Sync & Anti-Loop Engine
 let player = null;
 let playerReady = false;
 let isSyncing = false;
 let isPlaying = false;
 let progressInterval = null;
 let currentVideoId = '2Vv-BfVoq4g'; // Default video: Ed Sheeran - Perfect
+let lastBroadcastTime = 0;
+let lastBroadcastState = null;
 
 // ICE Configuration (Google STUN + Cloudflare + OpenRelay TURN for Cellular NAT)
 const ICE_CONFIG = {
@@ -153,10 +156,18 @@ function connectToMqttRoom() {
     mqttClient.on('connect', () => {
       console.log('MQTT Connected as', CLIENT_ID);
       const topic = getRoomTopic();
-      mqttClient.subscribe(topic, { qos: 0 }, (err) => {
+      mqttClient.subscribe(topic, { qos: 1 }, (err) => {
         if (!err) {
           console.log('Subscribed to topic:', topic);
           showToast(`💕 Terhubung ke ruangan ${currentRoom}!`);
+
+          // Kirim pesan tertunda jika ada
+          while (signalQueue.length > 0) {
+            const queued = signalQueue.shift();
+            try {
+              mqttClient.publish(topic, JSON.stringify(queued), { qos: 1 });
+            } catch (e) {}
+          }
 
           // Broadcast kehadiran ke pasangan
           broadcastSignal({
@@ -193,10 +204,16 @@ function connectToMqttRoom() {
 }
 
 function broadcastSignal(msg) {
+  msg.senderId = CLIENT_ID;
   if (mqttClient && mqttClient.connected) {
-    msg.senderId = CLIENT_ID;
     const topic = getRoomTopic();
-    mqttClient.publish(topic, JSON.stringify(msg), { qos: 0 });
+    try {
+      mqttClient.publish(topic, JSON.stringify(msg), { qos: 1 });
+    } catch (e) {
+      console.error('MQTT publish error:', e);
+    }
+  } else {
+    signalQueue.push(msg);
   }
 }
 
@@ -222,13 +239,14 @@ async function handleSignalMessage(data) {
         isHost: isHost
       });
 
-      // Jika kita host dan video lagi jalan, sinkronkan video
-      if (isHost && player && playerReady) {
+      // Sinkronkan video saat ini ke pasangan yang baru masuk
+      if (player && playerReady) {
+        const curTime = player.getCurrentTime ? player.getCurrentTime() : 0;
         broadcastSignal({
           type: 'room-state',
           video: {
             videoId: currentVideoId,
-            currentTime: player.getCurrentTime ? player.getCurrentTime() : 0,
+            currentTime: curTime,
             playing: isPlaying
           }
         });
@@ -258,7 +276,9 @@ async function handleSignalMessage(data) {
 
     case 'room-state':
       if (data.video && data.video.videoId) {
-        loadYouTubeById(data.video.videoId, data.video.currentTime || 0, data.video.playing);
+        if (data.video.videoId !== currentVideoId) {
+          loadYouTubeById(data.video.videoId, data.video.currentTime || 0, data.video.playing);
+        }
       }
       break;
 
@@ -281,40 +301,56 @@ async function handleSignalMessage(data) {
       showToast(`${data.userName}: ${data.emoji}`);
       break;
 
-    // YouTube Synchronized Controls
+    // YouTube Synchronized Controls (Anti-Looping)
     case 'video-play':
       if (player && playerReady) {
         isSyncing = true;
-        player.seekTo(data.currentTime, true);
+        lastBroadcastState = 'play';
+        lastBroadcastTime = Date.now();
+
+        const myTime = player.getCurrentTime ? player.getCurrentTime() : 0;
+        // Hanya seek jika selisih waktu lebih dari 2 detik agar tidak tersendat-sendat
+        if (Math.abs(myTime - data.currentTime) > 2) {
+          player.seekTo(data.currentTime, true);
+        }
         player.playVideo();
         isPlaying = true;
         updatePlayPauseBtn();
         showSyncStatus('▶️ Diputar bersama');
-        setTimeout(() => { isSyncing = false; }, 600);
+        setTimeout(() => { isSyncing = false; }, 1500);
       }
       break;
 
     case 'video-pause':
       if (player && playerReady) {
         isSyncing = true;
-        player.seekTo(data.currentTime, true);
+        lastBroadcastState = 'pause';
+        lastBroadcastTime = Date.now();
+
+        const myTime = player.getCurrentTime ? player.getCurrentTime() : 0;
+        if (Math.abs(myTime - data.currentTime) > 2) {
+          player.seekTo(data.currentTime, true);
+        }
         player.pauseVideo();
         isPlaying = false;
         updatePlayPauseBtn();
         showSyncStatus('⏸️ Dijeda bersama');
-        setTimeout(() => { isSyncing = false; }, 600);
+        setTimeout(() => { isSyncing = false; }, 1500);
       }
       break;
 
     case 'video-seek':
       if (player && playerReady) {
+        isSyncing = true;
         player.seekTo(data.currentTime, true);
+        setTimeout(() => { isSyncing = false; }, 1500);
       }
       break;
 
     case 'video-change':
+      showToast('🎬 Pasangan mengganti video!');
       loadYouTubeById(data.videoId, 0, true);
-      showSyncStatus('🎬 Video baru dimuat!');
+      showSyncStatus('🎬 Video baru dimuat bersama!');
       break;
 
     // WebRTC Signaling
@@ -513,7 +549,6 @@ async function initiateWebRtcCall() {
 }
 
 async function handleWebRtcOffer(offer, callerName) {
-  // Jika belum aktif kamera, coba aktifkan tanpa memblokir
   if (!localStream) {
     try { await startLocalStream(); } catch (e) {}
   }
@@ -807,20 +842,34 @@ function onPlayerReady() {
 }
 
 function onPlayerStateChange(event) {
+  // Jika sedang dipicu oleh sinkronisasi partner, abaikan agar tidak terjadi echo loop
   if (isSyncing) return;
+
+  const now = Date.now();
 
   if (event.data === YT.PlayerState.PLAYING) {
     isPlaying = true;
     updatePlayPauseBtn();
-    const currentTime = player.getCurrentTime();
-    broadcastSignal({ type: 'video-play', currentTime });
-    showSyncStatus('▶️ Memutar video...');
+
+    // Cegah broadcast berulang-ulang yang menyebabkan video diulang-ulang
+    if (lastBroadcastState !== 'play' || (now - lastBroadcastTime > 2000)) {
+      lastBroadcastState = 'play';
+      lastBroadcastTime = now;
+      const currentTime = player.getCurrentTime ? player.getCurrentTime() : 0;
+      broadcastSignal({ type: 'video-play', currentTime });
+      showSyncStatus('▶️ Memutar video...');
+    }
   } else if (event.data === YT.PlayerState.PAUSED) {
     isPlaying = false;
     updatePlayPauseBtn();
-    const currentTime = player.getCurrentTime();
-    broadcastSignal({ type: 'video-pause', currentTime });
-    showSyncStatus('⏸️ Menjeda video...');
+
+    if (lastBroadcastState !== 'pause' || (now - lastBroadcastTime > 2000)) {
+      lastBroadcastState = 'pause';
+      lastBroadcastTime = now;
+      const currentTime = player.getCurrentTime ? player.getCurrentTime() : 0;
+      broadcastSignal({ type: 'video-pause', currentTime });
+      showSyncStatus('⏸️ Menjeda video...');
+    }
   }
 }
 
@@ -841,24 +890,34 @@ function updatePlayPauseBtn() {
 function seekTo(event) {
   if (!player || !playerReady) return;
   const bar = document.getElementById('progressBar');
+  if (!bar) return;
   const rect = bar.getBoundingClientRect();
   const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-  const newTime = ratio * player.getDuration();
+  const duration = player.getDuration ? player.getDuration() : 0;
+  if (duration <= 0) return;
+
+  const newTime = ratio * duration;
+  isSyncing = true;
   player.seekTo(newTime, true);
   broadcastSignal({ type: 'video-seek', currentTime: newTime });
+  setTimeout(() => { isSyncing = false; }, 1200);
 }
 
 function startProgressTracker() {
   clearInterval(progressInterval);
   progressInterval = setInterval(() => {
     if (!player || !playerReady || !isPlaying) return;
-    const current = player.getCurrentTime();
-    const duration = player.getDuration();
-    if (duration > 0) {
-      const pct = (current / duration) * 100;
-      document.getElementById('progressFill').style.width = pct + '%';
-      document.getElementById('timeDisplay').textContent = `${formatTime(current)} / ${formatTime(duration)}`;
-    }
+    try {
+      const current = player.getCurrentTime ? player.getCurrentTime() : 0;
+      const duration = player.getDuration ? player.getDuration() : 0;
+      if (duration > 0) {
+        const pct = (current / duration) * 100;
+        const fill = document.getElementById('progressFill');
+        if (fill) fill.style.width = pct + '%';
+        const timeEl = document.getElementById('timeDisplay');
+        if (timeEl) timeEl.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
+      }
+    } catch (e) {}
   }, 500);
 }
 
@@ -891,6 +950,7 @@ function loadVideo() {
     return;
   }
 
+  showToast('🎬 Mengganti video...');
   currentVideoId = videoId;
   loadYouTubeById(videoId, 0, true);
   broadcastSignal({ type: 'video-change', videoId });
@@ -898,30 +958,48 @@ function loadVideo() {
   toggleVideoInput();
 }
 
-function loadYouTubeById(id, startTime = 0, autoPlay = false) {
+function loadYouTubeById(id, startTime = 0, autoPlay = true) {
+  if (!id) return;
   currentVideoId = id;
-  if (player && playerReady) {
-    isSyncing = true;
-    player.loadVideoById({
-      videoId: id,
-      startSeconds: startTime
-    });
-    if (!autoPlay) player.pauseVideo();
-    setTimeout(() => { isSyncing = false; }, 800);
+  isSyncing = true;
+  lastBroadcastState = autoPlay ? 'play' : 'pause';
+  lastBroadcastTime = Date.now();
+
+  if (player && playerReady && player.loadVideoById) {
+    try {
+      player.loadVideoById({
+        videoId: id,
+        startSeconds: startTime
+      });
+      if (!autoPlay && player.pauseVideo) {
+        player.pauseVideo();
+      }
+    } catch (err) {
+      console.warn('loadVideoById failed, fallback to cue:', err);
+      if (player.cueVideoById) {
+        player.cueVideoById({ videoId: id, startSeconds: startTime });
+      }
+    }
+    setTimeout(() => { isSyncing = false; }, 2000);
+  } else {
+    initYouTubePlayer();
   }
 }
 
 function extractYouTubeId(url) {
   if (!url) return null;
   const clean = url.trim();
+  // Jika langsung kode ID 11 karakter
   if (/^[a-zA-Z0-9_-]{11}$/.test(clean)) return clean;
 
-  const match = clean.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/|live\/))([a-zA-Z0-9_-]{11})/);
+  // Mendukung link youtube.com (watch, embed, shorts, live) & youtu.be
+  const regExp = /(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?.*v=|embed\/|v\/|shorts\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+  const match = clean.match(regExp);
   if (match && match[1]) return match[1];
 
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-  const fallback = clean.match(regExp);
-  return (fallback && fallback[2].length === 11) ? fallback[2] : null;
+  // Fallback regex
+  const fallback = clean.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/);
+  return (fallback && fallback[2] && fallback[2].length === 11) ? fallback[2] : null;
 }
 
 function showSyncStatus(text) {
