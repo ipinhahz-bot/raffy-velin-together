@@ -16,6 +16,7 @@ let localStream = null;
 let isCalling = false;
 let micEnabled = true;
 let camEnabled = true;
+let iceCandidatesQueue = [];
 
 // YouTube Player Sync
 let player = null;
@@ -23,7 +24,7 @@ let playerReady = false;
 let isSyncing = false;
 let isPlaying = false;
 let progressInterval = null;
-let currentVideoId = '2Vv-BfVoq4g'; // Default video: Ed Sheeran - Perfect (Globally embeddable & romantic)
+let currentVideoId = '2Vv-BfVoq4g'; // Default video: Ed Sheeran - Perfect
 
 // ICE Configuration (Google STUN + Cloudflare + OpenRelay TURN for Cellular NAT)
 const ICE_CONFIG = {
@@ -68,6 +69,18 @@ window.onload = () => {
     if (inputRoom) inputRoom.value = hashRoom;
     showToast('🔑 Kode ruangan terisi dari link: ' + hashRoom);
   }
+
+  // Handle native fullscreen exit (Android back button, swipe)
+  const handleFsChange = () => {
+    const isNativeFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+    if (!isNativeFs && document.body.classList.contains('cinema-fullscreen')) {
+      document.body.classList.remove('cinema-fullscreen');
+      const btn = document.getElementById('btnFullscreen');
+      if (btn) btn.innerHTML = '⛶ Fullscreen';
+    }
+  };
+  document.addEventListener('fullscreenchange', handleFsChange);
+  document.addEventListener('webkitfullscreenchange', handleFsChange);
 };
 
 // ===== FLOATING HEARTS BACKGROUND =====
@@ -159,9 +172,7 @@ function connectToMqttRoom() {
     mqttClient.on('message', (topic, message) => {
       try {
         const data = JSON.parse(message.toString());
-        // Abaikan pesan yang dikirim oleh diri sendiri
-        if (data.senderId === CLIENT_ID) return;
-
+        if (data.senderId === CLIENT_ID) return; // Abaikan pesan diri sendiri
         handleSignalMessage(data);
       } catch (err) {
         console.error('MQTT message error:', err);
@@ -204,14 +215,14 @@ async function handleSignalMessage(data) {
       const cLabel = document.getElementById('cinemaRemoteLabel');
       if (cLabel) cLabel.textContent = `${data.userName} 💕`;
 
-      // Balas sinyal bahwa kita juga ada di sini (handshake)
+      // Balas sinyal bahwa kita ada di sini
       broadcastSignal({
         type: 'user-ack',
         userName: myName,
         isHost: isHost
       });
 
-      // Jika kita host dan video lagi jalan, sinkronkan video ke dia
+      // Jika kita host dan video lagi jalan, sinkronkan video
       if (isHost && player && playerReady) {
         broadcastSignal({
           type: 'room-state',
@@ -223,9 +234,9 @@ async function handleSignalMessage(data) {
         });
       }
 
-      // Jika kamera kita sudah nyala, otomatis ajak panggilan
+      // Jika kamera kita sudah aktif, panggil pasangan
       if (isCalling && localStream) {
-        setTimeout(() => initiateWebRtcCall(), 800);
+        setTimeout(() => initiateWebRtcCall(), 600);
       }
       break;
 
@@ -241,7 +252,7 @@ async function handleSignalMessage(data) {
       if (cLabelAck) cLabelAck.textContent = `${data.userName} 💕`;
 
       if (isCalling && localStream) {
-        setTimeout(() => initiateWebRtcCall(), 800);
+        setTimeout(() => initiateWebRtcCall(), 600);
       }
       break;
 
@@ -308,10 +319,10 @@ async function handleSignalMessage(data) {
 
     // WebRTC Signaling
     case 'call-request':
-      showToast(`📹 ${data.userName} menyalakan kamera!`);
-      if (!localStream) {
-        const localOverlayText = document.getElementById('localOverlayText');
-        if (localOverlayText) localOverlayText.textContent = 'Ketuk untuk Masuk VC';
+      showToast(`📹 ${data.userName} mengajak Video Call!`);
+      const localOverlayText = document.getElementById('localOverlayText');
+      if (localOverlayText && !localStream) {
+        localOverlayText.textContent = 'Ketuk untuk Masuk VC';
       }
       break;
 
@@ -324,13 +335,7 @@ async function handleSignalMessage(data) {
       break;
 
     case 'webrtc-ice':
-      if (peerConnection && data.candidate) {
-        try {
-          await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } catch (e) {
-          console.error('ICE candidate error:', e);
-        }
-      }
+      await addIceCandidateSafely(data.candidate);
       break;
 
     case 'call-ended':
@@ -348,7 +353,7 @@ function createPeerConnection() {
 
   peerConnection = new RTCPeerConnection(ICE_CONFIG);
 
-  // Masukkan audio & video track lokal
+  // Masukkan audio & video track lokal jika sudah ada
   if (localStream) {
     localStream.getTracks().forEach((track) => {
       peerConnection.addTrack(track, localStream);
@@ -357,8 +362,8 @@ function createPeerConnection() {
 
   // Tangkap video pasangan
   peerConnection.ontrack = (event) => {
-    console.log('Incoming remote stream track!');
-    const stream = event.streams[0];
+    console.log('Incoming remote stream track!', event.track.kind);
+    const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
 
     const remoteVid = document.getElementById('remoteVideo');
     if (remoteVid) {
@@ -373,7 +378,7 @@ function createPeerConnection() {
 
     isCalling = true;
     updateCallBtn();
-    showToast('📹 Pasangan terhubung di video call!');
+    showToast(`📹 Wajah ${partnerName || 'pasangan'} sudah tampil!`);
   };
 
   peerConnection.onicecandidate = (event) => {
@@ -395,19 +400,48 @@ function createPeerConnection() {
   return peerConnection;
 }
 
+async function addIceCandidateSafely(candidate) {
+  if (!candidate) return;
+  if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (e) {
+      console.error('Add ICE candidate error:', e);
+    }
+  } else {
+    iceCandidatesQueue.push(candidate);
+  }
+}
+
+async function flushIceCandidates() {
+  if (!peerConnection || !peerConnection.remoteDescription) return;
+  while (iceCandidatesQueue.length > 0) {
+    const candidate = iceCandidatesQueue.shift();
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (e) {
+      console.error('Flush ICE candidate error:', e);
+    }
+  }
+}
+
 // Mulai kamera lokal
 async function startLocalStream() {
   if (localStream) return true;
 
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        facingMode: 'user'
-      },
-      audio: true
-    });
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+        audio: true
+      });
+    } catch (e1) {
+      console.warn('Ideal constraints failed, fallback to basic:', e1);
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
+      });
+    }
 
     const localVid = document.getElementById('localVideo');
     if (localVid) {
@@ -417,6 +451,17 @@ async function startLocalStream() {
 
     const localOverlay = document.getElementById('localOverlay');
     if (localOverlay) localOverlay.style.display = 'none';
+
+    // Tambahkan track ke peerConnection yang sudah aktif jika ada
+    if (peerConnection && localStream) {
+      localStream.getTracks().forEach((track) => {
+        const senders = peerConnection.getSenders();
+        const exists = senders.some(s => s.track && s.track.kind === track.kind);
+        if (!exists) {
+          peerConnection.addTrack(track, localStream);
+        }
+      });
+    }
 
     syncCinemaStreams();
     showToast('📷 Kamera & Mic kamu aktif!');
@@ -443,7 +488,6 @@ async function toggleCall() {
     isCalling = true;
     updateCallBtn();
 
-    // Beritahu pasangan & inisiasi offer
     broadcastSignal({ type: 'call-request', userName: myName });
     initiateWebRtcCall();
     showToast('📹 Menghubungi pasangan...');
@@ -451,7 +495,7 @@ async function toggleCall() {
 }
 
 async function initiateWebRtcCall() {
-  const pc = createPeerConnection();
+  const pc = peerConnection || createPeerConnection();
   try {
     const offer = await pc.createOffer({
       offerToReceiveAudio: 1,
@@ -469,11 +513,16 @@ async function initiateWebRtcCall() {
 }
 
 async function handleWebRtcOffer(offer, callerName) {
-  await startLocalStream();
+  // Jika belum aktif kamera, coba aktifkan tanpa memblokir
+  if (!localStream) {
+    try { await startLocalStream(); } catch (e) {}
+  }
 
-  const pc = createPeerConnection();
+  const pc = peerConnection || createPeerConnection();
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    await flushIceCandidates();
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
@@ -484,7 +533,7 @@ async function handleWebRtcOffer(offer, callerName) {
 
     isCalling = true;
     updateCallBtn();
-    showToast(`📹 Menghubungkan video dengan ${callerName}...`);
+    showToast(`📹 Terhubung dengan ${callerName || 'pasangan'}...`);
   } catch (err) {
     console.error('Handle offer error:', err);
   }
@@ -494,6 +543,7 @@ async function handleWebRtcAnswer(answer) {
   if (peerConnection) {
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+      await flushIceCandidates();
     } catch (err) {
       console.error('Handle answer error:', err);
     }
@@ -522,6 +572,7 @@ function endCall() {
     localStream.getTracks().forEach((t) => t.stop());
     localStream = null;
   }
+  iceCandidatesQueue = [];
 
   const localVid = document.getElementById('localVideo');
   if (localVid) localVid.srcObject = null;
@@ -693,40 +744,42 @@ function syncCinemaStreams() {
   const localVid = document.getElementById('localVideo');
   const remoteVid = document.getElementById('remoteVideo');
 
-  if (cinemaLocal && localVid && localVid.srcObject) {
-    if (cinemaLocal.srcObject !== localVid.srcObject) {
-      cinemaLocal.srcObject = localVid.srcObject;
+  if (cinemaLocal) {
+    const src = localStream || (localVid && localVid.srcObject);
+    if (src && cinemaLocal.srcObject !== src) {
+      cinemaLocal.srcObject = src;
+      cinemaLocal.play().catch(() => {});
+    } else if (!src) {
+      cinemaLocal.srcObject = null;
     }
-    cinemaLocal.play().catch(() => {});
-  } else if (cinemaLocal && localStream) {
-    if (cinemaLocal.srcObject !== localStream) {
-      cinemaLocal.srcObject = localStream;
-    }
-    cinemaLocal.play().catch(() => {});
-  } else if (cinemaLocal) {
-    cinemaLocal.srcObject = null;
   }
 
-  if (cinemaRemote && remoteVid && remoteVid.srcObject) {
-    if (cinemaRemote.srcObject !== remoteVid.srcObject) {
-      cinemaRemote.srcObject = remoteVid.srcObject;
+  if (cinemaRemote) {
+    const src = remoteVid && remoteVid.srcObject;
+    if (src && cinemaRemote.srcObject !== src) {
+      cinemaRemote.srcObject = src;
+      cinemaRemote.play().catch(() => {});
+    } else if (!src) {
+      cinemaRemote.srcObject = null;
     }
-    cinemaRemote.play().catch(() => {});
-  } else if (cinemaRemote) {
-    cinemaRemote.srcObject = null;
   }
 }
 
 // ===== YOUTUBE SYNC LOGIC =====
 function loadYouTubeAPI() {
-  if (window.YT) return;
+  if (window.YT && window.YT.Player) {
+    initYouTubePlayer();
+    return;
+  }
   const tag = document.createElement('script');
   tag.src = 'https://www.youtube.com/iframe_api';
   const firstScriptTag = document.getElementsByTagName('script')[0];
   firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 }
 
-window.onYouTubeIframeAPIReady = function() {
+function initYouTubePlayer() {
+  if (player) return;
+  if (!window.YT || !window.YT.Player) return;
   player = new YT.Player('ytPlayer', {
     videoId: currentVideoId,
     playerVars: {
@@ -741,6 +794,10 @@ window.onYouTubeIframeAPIReady = function() {
       onStateChange: onPlayerStateChange
     }
   });
+}
+
+window.onYouTubeIframeAPIReady = function() {
+  initYouTubePlayer();
 };
 
 function onPlayerReady() {
@@ -814,7 +871,12 @@ function formatTime(s) {
 function toggleVideoInput() {
   const el = document.getElementById('videoInputArea');
   if (el) {
-    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'flex' : 'none';
+    const isHidden = el.style.display === 'none' || el.style.display === '';
+    el.style.display = isHidden ? 'flex' : 'none';
+    if (isHidden) {
+      const inp = document.getElementById('inputVideoUrl');
+      if (inp) inp.focus();
+    }
   }
 }
 
@@ -833,6 +895,7 @@ function loadVideo() {
   loadYouTubeById(videoId, 0, true);
   broadcastSignal({ type: 'video-change', videoId });
   input.value = '';
+  toggleVideoInput();
 }
 
 function loadYouTubeById(id, startTime = 0, autoPlay = false) {
@@ -849,9 +912,16 @@ function loadYouTubeById(id, startTime = 0, autoPlay = false) {
 }
 
 function extractYouTubeId(url) {
+  if (!url) return null;
+  const clean = url.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(clean)) return clean;
+
+  const match = clean.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/|live\/))([a-zA-Z0-9_-]{11})/);
+  if (match && match[1]) return match[1];
+
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-  const match = url.match(regExp);
-  return (match && match[2].length === 11) ? match[2] : null;
+  const fallback = clean.match(regExp);
+  return (fallback && fallback[2].length === 11) ? fallback[2] : null;
 }
 
 function showSyncStatus(text) {
@@ -960,7 +1030,6 @@ function appendMessage(data, isSelf) {
 }
 
 function addSystemMessage(text) {
-  // Hanya simpan jika pesan bukan spam status koneksi/kamera
   const chatMessages = document.getElementById('chatMessages');
   if (!chatMessages) return;
   const div = document.createElement('div');

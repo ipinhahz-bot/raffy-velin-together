@@ -432,7 +432,13 @@ html, body {
 .placeholder-emoji { font-size: 2.5rem; }
 .no-video-placeholder p { color: rgba(255,255,255,0.7); font-size: 0.88rem; }
 .placeholder-sub { color: rgba(255,255,255,0.5) !important; font-size: 0.78rem !important; }
-#youtubePlayer { width: 100%; height: 100%; position: absolute; inset: 0; }
+#ytPlayer, #ytPlayer iframe, #youtubePlayer {
+  width: 100% !important;
+  height: 100% !important;
+  position: absolute;
+  inset: 0;
+  border: none;
+}
 
 /* Sync Controls */
 .sync-controls {
