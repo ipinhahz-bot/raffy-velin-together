@@ -152,6 +152,7 @@
               </div>
             </div>
             <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
+            <button class="sync-btn-sm" type="button" onclick="openChangeVideoModal()" title="Ganti Video">🎬 Ganti Video</button>
             <button class="sync-btn-sm" onclick="toggleFullscreenCinema()" title="Layar Penuh Landscape">⛶</button>
           </div>
 
@@ -263,6 +264,35 @@
       <div class="room-code-display" id="modalRoomCode"></div>
       <p class="modal-hint">Bagikan kode ini ke pasangan kamu agar bisa gabung!</p>
       <button class="btn-primary" type="button" onclick="copyAndClose()">📋 Salin Link & Tutup</button>
+    </div>
+  </div>
+
+  <!-- Incoming Call Modal (User gesture for mobile browsers) -->
+  <div class="modal-overlay" id="callModalOverlay" style="display:none;">
+    <div class="modal call-modal">
+      <div class="modal-icon pulse-heart">📹 💕</div>
+      <h3 id="callModalTitle">Pasangan Mengajak Video Call!</h3>
+      <p class="modal-hint">Ketuk tombol di bawah untuk menyalakan kamera & ngobrol tatap muka berdua.</p>
+      <div class="modal-actions">
+        <button class="btn-primary" type="button" onclick="acceptIncomingCall()">💖 Buka Kamera & Masuk VC</button>
+        <button class="btn-secondary" type="button" onclick="rejectIncomingCall()">Nanti Dulu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Universal Change Video Modal (Works in normal & fullscreen cinema) -->
+  <div class="modal-overlay" id="videoModalOverlay" style="display:none;">
+    <div class="modal">
+      <h3>🎬 Ganti Video YouTube</h3>
+      <p class="modal-hint">Paste link video YouTube (video musik, podcast, film) di bawah ini:</p>
+      <div class="input-wrapper" style="margin: 14px 0;">
+        <span class="input-icon">🔗</span>
+        <input type="text" id="modalVideoInput" placeholder="Paste link YouTube di sini..." onkeydown="if(event.key==='Enter') submitChangeVideo()" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn-primary" type="button" onclick="submitChangeVideo()">🎬 Muat & Putar Bersama</button>
+        <button class="btn-secondary" type="button" onclick="closeChangeVideoModal()">Batal</button>
+      </div>
     </div>
   </div>
 

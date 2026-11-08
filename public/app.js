@@ -3,6 +3,7 @@ const CLIENT_ID = 'user_' + Math.random().toString(36).substring(2, 9);
 let myName = '';
 let currentRoom = '';
 let isHost = false;
+let isPolite = false;
 let partnerId = '';
 let partnerName = '';
 let modalClosed = false;
@@ -18,39 +19,48 @@ let isCalling = false;
 let micEnabled = true;
 let camEnabled = true;
 let iceCandidatesQueue = [];
+let makingOffer = false;
+let ignoreOffer = false;
+let pendingOffer = null;
 
 // YouTube Player Sync & Anti-Loop Engine
 let player = null;
 let playerReady = false;
-let isSyncing = false;
 let isPlaying = false;
+let isRemoteAction = false;
 let progressInterval = null;
 let currentVideoId = '2Vv-BfVoq4g'; // Default video: Ed Sheeran - Perfect
-let lastBroadcastTime = 0;
-let lastBroadcastState = null;
 
-// ICE Configuration (Google STUN + Cloudflare + OpenRelay TURN for Cellular NAT)
+// ICE Configuration (Google STUN + Cloudflare + Metered Global TURN for Cellular NAT)
 const ICE_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.metered.ca:80' },
     {
-      urls: 'turn:openrelay.metered.ca:80',
+      urls: 'turn:global.relay.metered.ca:80',
       username: 'openrelayproject',
       credential: 'openrelayproject'
     },
     {
-      urls: 'turn:openrelay.metered.ca:443',
+      urls: 'turn:global.relay.metered.ca:443',
       username: 'openrelayproject',
       credential: 'openrelayproject'
     },
     {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      urls: 'turn:global.relay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turns:global.relay.metered.ca:443?transport=tcp',
       username: 'openrelayproject',
       credential: 'openrelayproject'
     }
-  ]
+  ],
+  iceCandidatePoolSize: 10
 };
 
 // ===== INIT =====
@@ -118,6 +128,7 @@ function createRoom() {
   currentRoom = generateRoomId();
   document.getElementById('inputRoom').value = currentRoom;
   isHost = true;
+  isPolite = false; // Host is impolite in WebRTC negotiation
   connectToMqttRoom();
 }
 
@@ -132,6 +143,7 @@ function joinRoom() {
   localStorage.setItem('rv_name', name);
   currentRoom = room;
   isHost = false;
+  isPolite = true; // Guest is polite in WebRTC negotiation
   connectToMqttRoom();
 }
 
@@ -161,7 +173,7 @@ function connectToMqttRoom() {
           console.log('Subscribed to topic:', topic);
           showToast(`💕 Terhubung ke ruangan ${currentRoom}!`);
 
-          // Kirim pesan tertunda jika ada
+          // Kirim pesan antrian jika ada
           while (signalQueue.length > 0) {
             const queued = signalQueue.shift();
             try {
@@ -172,9 +184,13 @@ function connectToMqttRoom() {
           // Broadcast kehadiran ke pasangan
           broadcastSignal({
             type: 'user-joined',
-            senderId: CLIENT_ID,
             userName: myName,
             isHost: isHost
+          });
+
+          // Minta info sinkronisasi video & status terkini dari pasangan
+          broadcastSignal({
+            type: 'request-state'
           });
         }
       });
@@ -227,10 +243,7 @@ async function handleSignalMessage(data) {
       showToast(`💕 ${data.userName} sudah terhubung!`);
 
       // Update label video remote
-      const rLabel = document.getElementById('remoteLabel');
-      if (rLabel) rLabel.textContent = `${data.userName} 💕`;
-      const cLabel = document.getElementById('cinemaRemoteLabel');
-      if (cLabel) cLabel.textContent = `${data.userName} 💕`;
+      updateRemoteLabels(data.userName);
 
       // Balas sinyal bahwa kita ada di sini
       broadcastSignal({
@@ -240,22 +253,7 @@ async function handleSignalMessage(data) {
       });
 
       // Sinkronkan video saat ini ke pasangan yang baru masuk
-      if (player && playerReady) {
-        const curTime = player.getCurrentTime ? player.getCurrentTime() : 0;
-        broadcastSignal({
-          type: 'room-state',
-          video: {
-            videoId: currentVideoId,
-            currentTime: curTime,
-            playing: isPlaying
-          }
-        });
-      }
-
-      // Jika kamera kita sudah aktif, panggil pasangan
-      if (isCalling && localStream) {
-        setTimeout(() => initiateWebRtcCall(), 600);
-      }
+      sendRoomState();
       break;
 
     case 'user-ack':
@@ -263,22 +261,35 @@ async function handleSignalMessage(data) {
       partnerName = data.userName;
       updateOnlineCount(2);
       showToast(`💕 ${data.userName} ada di ruangan!`);
+      updateRemoteLabels(data.userName);
+      break;
 
-      const rLabelAck = document.getElementById('remoteLabel');
-      if (rLabelAck) rLabelAck.textContent = `${data.userName} 💕`;
-      const cLabelAck = document.getElementById('cinemaRemoteLabel');
-      if (cLabelAck) cLabelAck.textContent = `${data.userName} 💕`;
-
-      if (isCalling && localStream) {
-        setTimeout(() => initiateWebRtcCall(), 600);
-      }
+    case 'request-state':
+      sendRoomState();
       break;
 
     case 'room-state':
       if (data.video && data.video.videoId) {
         if (data.video.videoId !== currentVideoId) {
+          currentVideoId = data.video.videoId;
+          isRemoteAction = true;
           loadYouTubeById(data.video.videoId, data.video.currentTime || 0, data.video.playing);
+        } else if (player && playerReady) {
+          const myTime = player.getCurrentTime ? player.getCurrentTime() : 0;
+          if (Math.abs(myTime - data.video.currentTime) > 4) {
+            player.seekTo(data.video.currentTime, true);
+          }
+          if (data.video.playing) {
+            isRemoteAction = true;
+            player.playVideo();
+          } else {
+            isRemoteAction = true;
+            player.pauseVideo();
+          }
         }
+      }
+      if (data.isCalling && !localStream) {
+        showIncomingCallModal(partnerName || data.userName);
       }
       break;
 
@@ -301,64 +312,58 @@ async function handleSignalMessage(data) {
       showToast(`${data.userName}: ${data.emoji}`);
       break;
 
-    // YouTube Synchronized Controls (Anti-Looping)
+    // YouTube Synchronized Controls (Zero-Looping)
     case 'video-play':
       if (player && playerReady) {
-        isSyncing = true;
-        lastBroadcastState = 'play';
-        lastBroadcastTime = Date.now();
-
+        isRemoteAction = true;
         const myTime = player.getCurrentTime ? player.getCurrentTime() : 0;
-        // Hanya seek jika selisih waktu lebih dari 2 detik agar tidak tersendat-sendat
-        if (Math.abs(myTime - data.currentTime) > 2) {
+        // Hanya seek jika selisih waktu lebih dari 4 detik agar tidak tersendat-sendat
+        if (Math.abs(myTime - data.currentTime) > 4) {
           player.seekTo(data.currentTime, true);
         }
         player.playVideo();
         isPlaying = true;
         updatePlayPauseBtn();
         showSyncStatus('▶️ Diputar bersama');
-        setTimeout(() => { isSyncing = false; }, 1500);
       }
       break;
 
     case 'video-pause':
       if (player && playerReady) {
-        isSyncing = true;
-        lastBroadcastState = 'pause';
-        lastBroadcastTime = Date.now();
-
+        isRemoteAction = true;
         const myTime = player.getCurrentTime ? player.getCurrentTime() : 0;
-        if (Math.abs(myTime - data.currentTime) > 2) {
+        if (Math.abs(myTime - data.currentTime) > 4) {
           player.seekTo(data.currentTime, true);
         }
         player.pauseVideo();
         isPlaying = false;
         updatePlayPauseBtn();
         showSyncStatus('⏸️ Dijeda bersama');
-        setTimeout(() => { isSyncing = false; }, 1500);
       }
       break;
 
     case 'video-seek':
       if (player && playerReady) {
-        isSyncing = true;
+        isRemoteAction = true;
         player.seekTo(data.currentTime, true);
-        setTimeout(() => { isSyncing = false; }, 1500);
+        showSyncStatus('⏩ Digeser bersama');
       }
       break;
 
     case 'video-change':
-      showToast('🎬 Pasangan mengganti video!');
+      showToast(`🎬 ${data.userName || 'Pasangan'} mengganti video!`);
+      currentVideoId = data.videoId;
+      isRemoteAction = true;
       loadYouTubeById(data.videoId, 0, true);
-      showSyncStatus('🎬 Video baru dimuat bersama!');
+      showSyncStatus('🎬 Video baru diputar bersama!');
       break;
 
     // WebRTC Signaling
     case 'call-request':
-      showToast(`📹 ${data.userName} mengajak Video Call!`);
-      const localOverlayText = document.getElementById('localOverlayText');
-      if (localOverlayText && !localStream) {
-        localOverlayText.textContent = 'Ketuk untuk Masuk VC';
+      if (!localStream) {
+        showIncomingCallModal(data.userName);
+      } else {
+        initiateWebRtcCall();
       }
       break;
 
@@ -380,11 +385,32 @@ async function handleSignalMessage(data) {
   }
 }
 
-// ===== WEBRTC VIDEO CALL ENGINE =====
-function createPeerConnection() {
-  if (peerConnection) {
-    try { peerConnection.close(); } catch (e) {}
-    peerConnection = null;
+function updateRemoteLabels(name) {
+  const rLabel = document.getElementById('remoteLabel');
+  if (rLabel) rLabel.textContent = `${name} 💕`;
+  const cLabel = document.getElementById('cinemaRemoteLabel');
+  if (cLabel) cLabel.textContent = `${name} 💕`;
+}
+
+function sendRoomState() {
+  if (player && playerReady) {
+    const curTime = player.getCurrentTime ? player.getCurrentTime() : 0;
+    broadcastSignal({
+      type: 'room-state',
+      video: {
+        videoId: currentVideoId,
+        currentTime: curTime,
+        playing: isPlaying
+      },
+      isCalling: isCalling && localStream !== null
+    });
+  }
+}
+
+// ===== WEBRTC VIDEO CALL ENGINE (PERFECT NEGOTIATION) =====
+function getOrCreatePeerConnection() {
+  if (peerConnection && peerConnection.signalingState !== 'closed') {
+    return peerConnection;
   }
 
   peerConnection = new RTCPeerConnection(ICE_CONFIG);
@@ -414,7 +440,7 @@ function createPeerConnection() {
 
     isCalling = true;
     updateCallBtn();
-    showToast(`📹 Wajah ${partnerName || 'pasangan'} sudah tampil!`);
+    showToast(`📹 Wajah ${partnerName || 'pasangan'} sudah tampil! 💕`);
   };
 
   peerConnection.onicecandidate = (event) => {
@@ -423,6 +449,14 @@ function createPeerConnection() {
         type: 'webrtc-ice',
         candidate: event.candidate
       });
+    }
+  };
+
+  peerConnection.oniceconnectionstatechange = () => {
+    console.log('ICE connection state:', peerConnection.iceConnectionState);
+    if (peerConnection.iceConnectionState === 'failed') {
+      console.log('ICE failed, restarting ICE...');
+      peerConnection.restartIce();
     }
   };
 
@@ -461,7 +495,7 @@ async function flushIceCandidates() {
   }
 }
 
-// Mulai kamera lokal
+// Mulai kamera lokal dengan penanganan izin mobile yang ramah
 async function startLocalStream() {
   if (localStream) return true;
 
@@ -488,10 +522,10 @@ async function startLocalStream() {
     const localOverlay = document.getElementById('localOverlay');
     if (localOverlay) localOverlay.style.display = 'none';
 
-    // Tambahkan track ke peerConnection yang sudah aktif jika ada
-    if (peerConnection && localStream) {
+    // Tambahkan track ke peerConnection jika sudah ada
+    if (peerConnection) {
+      const senders = peerConnection.getSenders();
       localStream.getTracks().forEach((track) => {
-        const senders = peerConnection.getSenders();
         const exists = senders.some(s => s.track && s.track.kind === track.kind);
         if (!exists) {
           peerConnection.addTrack(track, localStream);
@@ -531,30 +565,49 @@ async function toggleCall() {
 }
 
 async function initiateWebRtcCall() {
-  const pc = peerConnection || createPeerConnection();
+  const pc = getOrCreatePeerConnection();
   try {
+    makingOffer = true;
     const offer = await pc.createOffer({
       offerToReceiveAudio: 1,
       offerToReceiveVideo: 1
     });
+    if (pc.signalingState !== 'stable') return;
     await pc.setLocalDescription(offer);
     broadcastSignal({
       type: 'webrtc-offer',
-      offer: offer,
+      offer: pc.localDescription,
       userName: myName
     });
   } catch (err) {
     console.error('Create offer error:', err);
+  } finally {
+    makingOffer = false;
   }
 }
 
 async function handleWebRtcOffer(offer, callerName) {
+  // Jika user belum menyalakan kamera, munculkan modal ajakan VC (agar ada user gesture)
   if (!localStream) {
-    try { await startLocalStream(); } catch (e) {}
+    pendingOffer = offer;
+    showIncomingCallModal(callerName);
+    return;
   }
 
-  const pc = peerConnection || createPeerConnection();
+  const pc = getOrCreatePeerConnection();
+  const offerCollision = (makingOffer || pc.signalingState !== 'stable');
+  ignoreOffer = !isPolite && offerCollision;
+
+  if (ignoreOffer) {
+    console.log('Ignored offer due to collision (impolite)');
+    return;
+  }
+
   try {
+    if (offerCollision && isPolite) {
+      console.log('Rolling back local offer (polite)');
+      await pc.setLocalDescription({ type: 'rollback' });
+    }
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     await flushIceCandidates();
 
@@ -563,19 +616,19 @@ async function handleWebRtcOffer(offer, callerName) {
 
     broadcastSignal({
       type: 'webrtc-answer',
-      answer: answer
+      answer: pc.localDescription
     });
 
     isCalling = true;
     updateCallBtn();
-    showToast(`📹 Terhubung dengan ${callerName || 'pasangan'}...`);
+    showToast(`📹 Terhubung dengan ${callerName || partnerName || 'pasangan'}! 💕`);
   } catch (err) {
     console.error('Handle offer error:', err);
   }
 }
 
 async function handleWebRtcAnswer(answer) {
-  if (peerConnection) {
+  if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
       await flushIceCandidates();
@@ -654,6 +707,51 @@ function toggleCam() {
   const btn = document.getElementById('btnCam');
   if (btn) btn.textContent = camEnabled ? '📷' : '🚫';
   showToast(camEnabled ? '📷 Kamera Nyala' : '🚫 Kamera Mati');
+}
+
+// ===== INCOMING CALL MODAL (USER GESTURE FRIENDLY) =====
+function showIncomingCallModal(callerName) {
+  const modal = document.getElementById('callModalOverlay');
+  const title = document.getElementById('callModalTitle');
+  if (title) title.textContent = `${callerName || 'Pasangan'} Mengajak Video Call! 💕`;
+  if (modal) {
+    modal.classList.add('open');
+    modal.style.display = 'flex';
+  }
+  showToast(`📹 ${callerName || 'Pasangan'} mengajak Video Call!`);
+}
+
+async function acceptIncomingCall() {
+  const modal = document.getElementById('callModalOverlay');
+  if (modal) {
+    modal.classList.remove('open');
+    modal.style.display = 'none';
+  }
+
+  showToast('📷 Menyalakan kamera...');
+  const ok = await startLocalStream();
+  if (!ok) return;
+
+  isCalling = true;
+  updateCallBtn();
+
+  if (pendingOffer) {
+    const offer = pendingOffer;
+    pendingOffer = null;
+    await handleWebRtcOffer(offer, partnerName);
+  } else {
+    initiateWebRtcCall();
+  }
+}
+
+function rejectIncomingCall() {
+  pendingOffer = null;
+  const modal = document.getElementById('callModalOverlay');
+  if (modal) {
+    modal.classList.remove('open');
+    modal.style.display = 'none';
+  }
+  showToast('VC ditolak');
 }
 
 // ===== CINEMA FULLSCREEN LANDSCAPE & DRAGGABLE VC =====
@@ -800,7 +898,7 @@ function syncCinemaStreams() {
   }
 }
 
-// ===== YOUTUBE SYNC LOGIC =====
+// ===== YOUTUBE SYNC LOGIC (ANTI-LOOP ENGINE) =====
 function loadYouTubeAPI() {
   if (window.YT && window.YT.Player) {
     initYouTubePlayer();
@@ -826,7 +924,8 @@ function initYouTubePlayer() {
     },
     events: {
       onReady: onPlayerReady,
-      onStateChange: onPlayerStateChange
+      onStateChange: onPlayerStateChange,
+      onError: onPlayerError
     }
   });
 }
@@ -841,35 +940,42 @@ function onPlayerReady() {
   startProgressTracker();
 }
 
-function onPlayerStateChange(event) {
-  // Jika sedang dipicu oleh sinkronisasi partner, abaikan agar tidak terjadi echo loop
-  if (isSyncing) return;
+function onPlayerError(e) {
+  console.warn('YouTube error code:', e.data);
+  if (e.data === 101 || e.data === 150) {
+    showToast('⚠️ Video ini dibatasi YouTube untuk diputar di web lain. Coba pilih link video YouTube yang lain ya!');
+  } else {
+    showToast('⚠️ Gagal memutar video. Cek link YouTube kamu!');
+  }
+}
 
-  const now = Date.now();
+function onPlayerStateChange(event) {
+  // Jika perubahan status disebabkan oleh perintah dari pasangan, abaikan agar tidak terjadi ping-pong loop!
+  if (isRemoteAction) {
+    if (event.data === YT.PlayerState.PLAYING) {
+      isPlaying = true;
+      updatePlayPauseBtn();
+      isRemoteAction = false;
+    } else if (event.data === YT.PlayerState.PAUSED) {
+      isPlaying = false;
+      updatePlayPauseBtn();
+      isRemoteAction = false;
+    }
+    return;
+  }
 
   if (event.data === YT.PlayerState.PLAYING) {
     isPlaying = true;
     updatePlayPauseBtn();
-
-    // Cegah broadcast berulang-ulang yang menyebabkan video diulang-ulang
-    if (lastBroadcastState !== 'play' || (now - lastBroadcastTime > 2000)) {
-      lastBroadcastState = 'play';
-      lastBroadcastTime = now;
-      const currentTime = player.getCurrentTime ? player.getCurrentTime() : 0;
-      broadcastSignal({ type: 'video-play', currentTime });
-      showSyncStatus('▶️ Memutar video...');
-    }
+    const currentTime = player.getCurrentTime ? player.getCurrentTime() : 0;
+    broadcastSignal({ type: 'video-play', currentTime });
+    showSyncStatus('▶️ Diputar bersama');
   } else if (event.data === YT.PlayerState.PAUSED) {
     isPlaying = false;
     updatePlayPauseBtn();
-
-    if (lastBroadcastState !== 'pause' || (now - lastBroadcastTime > 2000)) {
-      lastBroadcastState = 'pause';
-      lastBroadcastTime = now;
-      const currentTime = player.getCurrentTime ? player.getCurrentTime() : 0;
-      broadcastSignal({ type: 'video-pause', currentTime });
-      showSyncStatus('⏸️ Menjeda video...');
-    }
+    const currentTime = player.getCurrentTime ? player.getCurrentTime() : 0;
+    broadcastSignal({ type: 'video-pause', currentTime });
+    showSyncStatus('⏸️ Dijeda bersama');
   }
 }
 
@@ -897,10 +1003,9 @@ function seekTo(event) {
   if (duration <= 0) return;
 
   const newTime = ratio * duration;
-  isSyncing = true;
   player.seekTo(newTime, true);
   broadcastSignal({ type: 'video-seek', currentTime: newTime });
-  setTimeout(() => { isSyncing = false; }, 1200);
+  showSyncStatus('⏩ Digeser bersama');
 }
 
 function startProgressTracker() {
@@ -927,6 +1032,7 @@ function formatTime(s) {
   return `${m}:${sec < 10 ? '0' : ''}${sec}`;
 }
 
+// ===== GANTI VIDEO (INPUT NORMAL & MODAL BIOSKOP) =====
 function toggleVideoInput() {
   const el = document.getElementById('videoInputArea');
   if (el) {
@@ -950,20 +1056,66 @@ function loadVideo() {
     return;
   }
 
-  showToast('🎬 Mengganti video...');
-  currentVideoId = videoId;
-  loadYouTubeById(videoId, 0, true);
-  broadcastSignal({ type: 'video-change', videoId });
   input.value = '';
   toggleVideoInput();
+  changeVideoTo(videoId);
+}
+
+function openChangeVideoModal() {
+  const modal = document.getElementById('videoModalOverlay');
+  if (modal) {
+    modal.classList.add('open');
+    modal.style.display = 'flex';
+    const inp = document.getElementById('modalVideoInput');
+    if (inp) {
+      inp.value = '';
+      setTimeout(() => inp.focus(), 150);
+    }
+  }
+}
+
+function closeChangeVideoModal() {
+  const modal = document.getElementById('videoModalOverlay');
+  if (modal) {
+    modal.classList.remove('open');
+    modal.style.display = 'none';
+  }
+}
+
+function submitChangeVideo() {
+  const inp = document.getElementById('modalVideoInput');
+  if (!inp) return;
+  const url = inp.value.trim();
+  if (!url) {
+    showToast('⚠️ Masukkan link YouTube!');
+    return;
+  }
+  const videoId = extractYouTubeId(url);
+  if (!videoId) {
+    showToast('❌ Link YouTube tidak valid!');
+    return;
+  }
+  closeChangeVideoModal();
+  changeVideoTo(videoId);
+}
+
+function changeVideoTo(videoId) {
+  currentVideoId = videoId;
+  showToast('🎬 Mengganti video...');
+  isRemoteAction = true;
+  loadYouTubeById(videoId, 0, true);
+  broadcastSignal({
+    type: 'video-change',
+    videoId: videoId,
+    userName: myName
+  });
+  showSyncStatus('🎬 Video baru dimuat bersama!');
 }
 
 function loadYouTubeById(id, startTime = 0, autoPlay = true) {
   if (!id) return;
   currentVideoId = id;
-  isSyncing = true;
-  lastBroadcastState = autoPlay ? 'play' : 'pause';
-  lastBroadcastTime = Date.now();
+  isRemoteAction = true;
 
   if (player && playerReady && player.loadVideoById) {
     try {
@@ -980,7 +1132,6 @@ function loadYouTubeById(id, startTime = 0, autoPlay = true) {
         player.cueVideoById({ videoId: id, startSeconds: startTime });
       }
     }
-    setTimeout(() => { isSyncing = false; }, 2000);
   } else {
     initYouTubePlayer();
   }
@@ -1103,16 +1254,6 @@ function appendMessage(data, isSelf) {
     <div class="msg-bubble">${escapeHtml(data.message)}</div>
     <div class="msg-time">${data.timestamp}</div>
   `;
-  chatMessages.appendChild(div);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-function addSystemMessage(text) {
-  const chatMessages = document.getElementById('chatMessages');
-  if (!chatMessages) return;
-  const div = document.createElement('div');
-  div.className = 'chat-system-msg';
-  div.textContent = text;
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }

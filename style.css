@@ -816,9 +816,9 @@ html, body {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(61,33,71,0.5);
+  background: rgba(18, 6, 26, 0.75);
   backdrop-filter: blur(8px);
-  z-index: 500;
+  z-index: 2500;
   display: none;
   align-items: center;
   justify-content: center;
@@ -828,11 +828,32 @@ html, body {
 .modal {
   background: white;
   border-radius: var(--radius-lg);
-  padding: 28px;
+  padding: 24px;
   max-width: 340px;
   width: 100%;
   text-align: center;
-  box-shadow: 0 20px 60px rgba(61,33,71,0.3);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: modalPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+@keyframes modalPop {
+  0% { transform: scale(0.85); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.modal-icon.pulse-heart {
+  font-size: 2.2rem;
+  margin-bottom: 8px;
+  display: inline-block;
+  animation: heartPulse 1.4s infinite ease-in-out;
+}
+@keyframes heartPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
 }
 .modal h3 { font-size: 1.1rem; font-weight: 800; color: var(--text-dark); margin-bottom: 16px; }
 .room-code-display {
