@@ -96,6 +96,82 @@ window.onload = () => {
   document.addEventListener('webkitfullscreenchange', handleFsChange);
 };
 
+// ===== AUDIO NOTIFICATION ENGINE (WEB AUDIO API - ZERO ASSET DEPENDENCY) =====
+let audioCtx = null;
+
+function getAudioContext() {
+  if (!audioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      audioCtx = new AudioContextClass();
+    }
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(() => {});
+  }
+  return audioCtx;
+}
+
+// Unlock audio on first touch/click anywhere on page
+window.addEventListener('click', () => { getAudioContext(); }, { passive: true });
+window.addEventListener('touchstart', () => { getAudioContext(); }, { passive: true });
+
+// 1. Suara Pasangan Masuk Ruangan (Sweet Chime)
+function playJoinSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const notes = [
+      { freq: 587.33, time: now, dur: 0.16 },         // D5
+      { freq: 739.99, time: now + 0.12, dur: 0.18 },   // F#5
+      { freq: 880.00, time: now + 0.26, dur: 0.38 }    // A5
+    ];
+
+    notes.forEach(n => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(n.freq, n.time);
+      gain.gain.setValueAtTime(0.001, n.time);
+      gain.gain.exponentialRampToValueAtTime(0.2, n.time + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, n.time + n.dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(n.time);
+      osc.stop(n.time + n.dur);
+    });
+  } catch (e) {
+    console.warn('Audio play error:', e);
+  }
+}
+
+// 2. Suara Notifikasi Chat (Sweet "Ting!" Bell)
+function playChatSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(880, now);
+    osc.frequency.exponentialRampToValueAtTime(1320, now + 0.06);
+
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.exponentialRampToValueAtTime(0.25, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.32);
+  } catch (e) {
+    console.warn('Audio play error:', e);
+  }
+}
+
 // ===== FLOATING HEARTS BACKGROUND =====
 function generateHearts() {
   const container = document.getElementById('heartsBg');
@@ -240,7 +316,8 @@ async function handleSignalMessage(data) {
       partnerId = data.senderId;
       partnerName = data.userName;
       updateOnlineCount(2);
-      showToast(`💕 ${data.userName} sudah terhubung!`);
+      playJoinSound();
+      showToast(`🔔 💕 <b>${escapeHtml(data.userName)}</b> sudah online di ruangan!`);
 
       // Update label video remote
       updateRemoteLabels(data.userName);
@@ -260,7 +337,8 @@ async function handleSignalMessage(data) {
       partnerId = data.senderId;
       partnerName = data.userName;
       updateOnlineCount(2);
-      showToast(`💕 ${data.userName} ada di ruangan!`);
+      playJoinSound();
+      showToast(`🔔 💕 <b>${escapeHtml(data.userName)}</b> online bersama kamu!`);
       updateRemoteLabels(data.userName);
       break;
 
@@ -295,6 +373,8 @@ async function handleSignalMessage(data) {
 
     case 'chat':
       appendMessage(data, false);
+      playChatSound();
+      showToast(`💬 <b>${escapeHtml(data.userName)}</b>: ${escapeHtml(data.message)}`);
       break;
 
     case 'typing':
@@ -1320,10 +1400,14 @@ function copyAndClose() {
 }
 
 // ===== TOAST NOTIFICATION =====
+let toastTimer = null;
 function showToast(msg) {
   const toast = document.getElementById('toast');
   if (!toast) return;
-  toast.textContent = msg;
+  toast.innerHTML = msg;
   toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 3000);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove('show');
+  }, 3500);
 }
